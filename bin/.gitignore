@@ -1,3 +1,3 @@
-linux*/
-macosx*/
-win*/
+*.ilk
+*.pdb
+*.debug.exe
