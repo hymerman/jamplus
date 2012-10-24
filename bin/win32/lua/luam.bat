@@ -1,0 +1,1 @@
+@"%~dp0lua.exe" "D:/projects/luaplus51-all/build2012//bin.vs2012.win32/lua/luam.lua" %*
