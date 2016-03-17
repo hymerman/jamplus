@@ -114,7 +114,11 @@ file_dirscan(
 	    f.f_base.ptr = finfo->ff_name;
 	    f.f_base.len = strlen( finfo->ff_name );
 
-	    path_build( &f, filename );
+#ifdef OPT_ROOT_PATHS_AS_ABSOLUTE_EXT
+	    path_build( &f, filename, 0, 1 );
+#else
+	    path_build( &f, filename, 0 );
+#endif
 
 	    (*func)( closure, filename, 1 /* stat()'ed */, time_write );
 
@@ -137,7 +141,11 @@ file_dirscan(
 		    f.f_base.ptr = finfo->name;
 		    f.f_base.len = (int)(strlen( finfo->name ) + 1);
 
+#ifdef OPT_ROOT_PATHS_AS_ABSOLUTE_EXT
+		    path_build( &f, filename, 0, 1 );
+#else
 		    path_build( &f, filename, 0 );
+#endif
 
 		    (*func)( closure, filename, 1 /* stat()'ed */, finfo->time_write, 1 );
 		}
@@ -147,7 +155,11 @@ file_dirscan(
 		f.f_base.ptr = finfo->name;
 		f.f_base.len = (int)(strlen( finfo->name ));
 
+#ifdef OPT_ROOT_PATHS_AS_ABSOLUTE_EXT
+		path_build( &f, filename, 0, 1 );
+#else
 		path_build( &f, filename, 0 );
+#endif
 
 		(*func)( closure, filename, 1 /* stat()'ed */, finfo->time_write, 0 );
 	    }
@@ -155,7 +167,11 @@ file_dirscan(
 	    f.f_base.ptr = finfo->name;
 	    f.f_base.len = strlen( finfo->name );
 
+#ifdef OPT_ROOT_PATHS_AS_ABSOLUTE_EXT
+	    path_build( &f, filename, 0, 1 );
+#else
 	    path_build( &f, filename, 0 );
+#endif
 
 	    (*func)( closure, filename, 1 /* stat()'ed */, finfo->time_write );
 #endif
@@ -512,7 +528,7 @@ FILE* file_popen(const char *cmd, const char *mode)
 
     if (mode[0] == 'r')
     {
-	file = _fdopen(_open_osfhandle((long)hOut, _O_RDONLY | _O_TEXT), "rt");
+	file = _fdopen(_open_osfhandle((intptr_t)hOut, _O_RDONLY | _O_TEXT), "rt");
 	if (hIn != INVALID_HANDLE_VALUE)
 	    CloseHandle(hIn);
 	if (hErr != INVALID_HANDLE_VALUE)
@@ -520,7 +536,7 @@ FILE* file_popen(const char *cmd, const char *mode)
     }
     else
     {
-	file = _fdopen(_open_osfhandle((long)hIn, _O_WRONLY | _O_TEXT), "wt");
+	file = _fdopen(_open_osfhandle((intptr_t)hIn, _O_WRONLY | _O_TEXT), "wt");
 	if (hOut != INVALID_HANDLE_VALUE)
 	    CloseHandle(hOut);
 	if (hErr != INVALID_HANDLE_VALUE)

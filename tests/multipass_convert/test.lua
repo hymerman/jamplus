@@ -12,7 +12,7 @@ function Test()
 	{
 	}
 
-	os.remove('.depcache')
+	ospath.remove('.depcache')
 	RunJam{ 'clean' }
 	TestDirectories(originalDirs)
 	TestFiles(originalFiles)
@@ -25,6 +25,7 @@ function Test()
 @ ConvertAlternateInputToJam alternate_input1.txt.jam
 @ ConvertInputToJam input2.txt.jam
 *** updated 3 target(s)...
+*** executing pass 2...
 WriteOutput all - output1.dat
 WriteOutput all - output2.dat
 WriteOutput all - output3.dat
@@ -34,8 +35,17 @@ WriteOutput all - output6.dat
 WriteOutput all - output7.dat
 WriteAlternateOutput alternate_output1.dat
 WriteAlternateOutput alternate_output2.dat
-*** found 20 target(s)...
-*** updating 15 target(s)...
+*** found 13 target(s)...
+*** updating 12 target(s)...
+@ WriteFile output1.dat
+@ WriteFile output2.dat
+@ WriteFile output3.dat
+@ WriteFile output4.dat
+@ WriteFile output5.dat
+@ WriteFile output6.dat
+@ WriteFile output7.dat
+@ WriteFile alternate_output1.dat
+@ WriteFile alternate_output2.dat
 *** updated 12 target(s)...
 ]]
 
@@ -68,6 +78,7 @@ WriteAlternateOutput alternate_output2.dat
 	---------------------------------------------------------------------------
 	local pattern2 = [[
 *** found 7 target(s)...
+*** executing pass 2...
 WriteOutput all - output1.dat
 WriteOutput all - output2.dat
 WriteOutput all - output3.dat
@@ -77,7 +88,7 @@ WriteOutput all - output6.dat
 WriteOutput all - output7.dat
 WriteAlternateOutput alternate_output1.dat
 WriteAlternateOutput alternate_output2.dat
-*** found 23 target(s)...
+*** found 16 target(s)...
 ]]
 	TestPattern(pattern2, RunJam{})
 	TestFiles(pass1Files)
@@ -86,6 +97,7 @@ WriteAlternateOutput alternate_output2.dat
 	---------------------------------------------------------------------------
 	local cleanpattern = [[
 *** found 2 target(s)...
+*** executing pass 2...
 WriteOutput all - output1.dat
 WriteOutput all - output2.dat
 WriteOutput all - output3.dat
@@ -95,7 +107,7 @@ WriteOutput all - output6.dat
 WriteOutput all - output7.dat
 WriteAlternateOutput alternate_output1.dat
 WriteAlternateOutput alternate_output2.dat
-*** found 3 target(s)...
+*** found 1 target(s)...
 *** updating 1 target(s)...
 @ Clean clean
 *** updated 1 target(s)...
@@ -112,6 +124,7 @@ WriteAlternateOutput alternate_output2.dat
 	}
 	TestFiles(cleanFiles)
 	TestDirectories(originalDirs)
-	os.remove('.depcache')
+	ospath.remove('.depcache')
 end
 
+TestChecksum = Test

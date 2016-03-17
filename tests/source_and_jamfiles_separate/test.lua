@@ -1,4 +1,39 @@
 function Test()
+	local function WriteOriginalFiles()
+		ospath.write_file('src/precomp.h', [[
+#ifndef PRECOMP_H
+#define PRECOMP_H
+
+#include <stdio.h>
+
+#endif // PRECOMP_H
+]])
+
+		ospath.write_file('src/createprecomp.c', [[
+#include "precomp.h"
+]])
+	end
+
+	local function WriteModifiedFileA()
+		ospath.write_file('src/precomp.h', [[
+// Modified
+#ifndef PRECOMP_H
+#define PRECOMP_H
+
+#include <stdio.h>
+
+#endif // PRECOMP_H
+]])
+
+	end
+
+	local function WriteModifiedFileB()
+		ospath.write_file('src/createprecomp.c', [[
+// Modified
+#include "precomp.h"
+]])
+	end
+
 	local originalFiles =
 	{
 		'jam/Jamfile.jam',
@@ -16,6 +51,7 @@ function Test()
 
 	do
 		-- Test for a clean directory.
+		WriteOriginalFiles()
 		RunJam{ '-Cjam', 'clean' }
 		TestDirectories(originalDirs)
 		TestFiles(originalFiles)
@@ -31,20 +67,21 @@ function Test()
 		{
 			'jam/',
 			'src/',
-			'jam/win32-release/',
-			'jam/win32-release/helloworld/',
+			'jam/$(TOOLCHAIN_PATH)/',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/',
 		}
 	
 		files =
 		{
 			'jam/Jamfile.jam',
-			'jam/win32-release/helloworld/createprecomp.obj',
-			'jam/win32-release/helloworld/file.obj',
-			'jam/win32-release/helloworld/helloworld.release.exe',
-			'?jam/win32-release/helloworld/helloworld.release.exe.intermediate.manifest',
-			'jam/win32-release/helloworld/helloworld.release.pdb',
-			'jam/win32-release/helloworld/main.obj',
-			'jam/win32-release/helloworld/precomp.h.pch',
+			'jam/.build/.depcache',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/createprecomp.obj',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/file.obj',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/helloworld.exe',
+			'?jam/$(TOOLCHAIN_PATH)/helloworld/helloworld.exe.intermediate.manifest',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/helloworld.pdb',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/main.obj',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/precomp.h.pch',
 			'src/createprecomp.c',
 			'src/file.c',
 			'src/main.c',
@@ -52,20 +89,20 @@ function Test()
 		}
 
 		pattern = [[
-*** found 23 target(s)...
-*** updating 7 target(s)...
-@ C.vc.CC <win32!release:helloworld>precomp.h.pch
-!NEXT!@ C.vc.CC <win32!release:helloworld>../src/file.obj
-!NEXT!@ C.vc.Link <win32!release:helloworld>helloworld.exe
-!NEXT!*** updated 7 target(s)...
+*** found 22 target(s)...
+*** updating 6 target(s)...
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/createprecomp.obj
+!NEXT!@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/file.obj
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):helloworld>helloworld.exe
+!NEXT!*** updated 6 target(s)...
 ]]
 	else
 		dirs = {
 			'jam/',
 			'src/',
-			'jam/macosx32-release/',
-			'jam/macosx32-release/helloworld/',
-			'jam/macosx32%-release/helloworld/precomp%-%x+/',
+			'jam/$(TOOLCHAIN_PATH)/',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/precomp%-%x+/',
 		}
 
 		files = {
@@ -74,11 +111,12 @@ function Test()
 			'src/main.c',
 			'src/precomp.h',
 			'jam/Jamfile.jam',
-			'jam/macosx32-release/helloworld/createprecomp.o',
-			'jam/macosx32-release/helloworld/file.o',
-			'jam/macosx32-release/helloworld/helloworld.release',
-			'jam/macosx32-release/helloworld/main.o',
-			'jam/macosx32%-release/helloworld/precomp%-%x+/precomp.h.gch',
+			'jam/.build/.depcache',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/createprecomp.o',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/file.o',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/helloworld',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/main.o',
+			'jam/$(TOOLCHAIN_PATH)/helloworld/precomp%-%x+/precomp.h.gch',
 			'src/createprecomp.c',
 			'src/file.c',
 			'src/main.c',
@@ -88,11 +126,11 @@ function Test()
 		pattern = [[
 			*** found 17 target(s)...
 			*** updating 7 target(s)...
-			&@ C.gcc.PCH <macosx32!release:helloworld%-%x+>precomp.h.gch 
-			@ C.gcc.CC <macosx32!release:helloworld>../src/file.o 
-			@ C.gcc.CC <macosx32!release:helloworld>../src/main.o 
-			@ C.gcc.CC <macosx32!release:helloworld>../src/createprecomp.o 
-			@ C.gcc.Link <macosx32!release:helloworld>helloworld 
+			&@ C.$(COMPILER).PCH <$(TOOLCHAIN_GRIST):helloworld%-%x+>precomp.h.gch 
+			@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/file.o 
+			@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/main.o 
+			@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/createprecomp.o 
+			@ $(C_LINK) <$(TOOLCHAIN_GRIST):helloworld>helloworld 
 			*** updated 7 target(s)...
 ]]
 	
@@ -105,46 +143,67 @@ function Test()
 	end
 
 	---------------------------------------------------------------------------
+	local noopPattern
+	if Platform == 'win32' then
+		noopPattern = [[
+			*** found 22 target(s)...
+]]
+	else
+		noopPattern = [[
+			*** found 17 target(s)...
+]]
+	end
+
 	do
-		if Platform == 'win32' then
-			pattern = [[
-				*** found 23 target(s)...
-]]
-		else
-			pattern = [[
-				*** found 17 target(s)...
-]]
-		end
-		TestPattern(pattern, RunJam{ '-Cjam' })
+		TestPattern(noopPattern, RunJam{ '-Cjam' })
 		TestDirectories(dirs)
 		TestFiles(files)
 	end
 
 	---------------------------------------------------------------------------
 	do
-		os.sleep(1.0)
-		os.touch('src/precomp.h')
+		osprocess.sleep(1.0)
+		ospath.touch('src/precomp.h')
+
+		if useChecksums then
+			TestPattern(noopPattern, RunJam{ '-Cjam' })
+
+			osprocess.sleep(1.0)
+			WriteModifiedFileA()
+		end
 
 		if Platform == 'win32' then
 			pattern = [[
-*** found 23 target(s)...
+*** found 22 target(s)...
 *** updating 5 target(s)...
-@ C.vc.CC <win32!release:helloworld>precomp.h.pch
-!NEXT!@ C.vc.CC <win32!release:helloworld>../src/file.obj
-!NEXT!@ C.vc.Link <win32!release:helloworld>helloworld.exe
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/createprecomp.obj
+!NEXT!@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/file.obj
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):helloworld>helloworld.exe
 !NEXT!*** updated 5 target(s)...
 ]]
 		else
-			pattern = [[
+			if useChecksums then
+				pattern = [[
 				*** found 17 target(s)...
 				*** updating 5 target(s)...
-				&@ C.gcc.PCH <macosx32!release:helloworld%-%x+>precomp.h.gch 
-				@ C.gcc.CC <macosx32!release:helloworld>../src/file.o 
-				@ C.gcc.CC <macosx32!release:helloworld>../src/main.o 
-				@ C.gcc.CC <macosx32!release:helloworld>../src/createprecomp.o 
-				@ C.gcc.Link <macosx32!release:helloworld>helloworld
+				&@ C.$(COMPILER).PCH <$(TOOLCHAIN_GRIST):helloworld%-%x+>precomp.h.gch 
+				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/file.o 
+				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/main.o 
+				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/createprecomp.o 
+				*** updated 4 target(s)...
+]]
+			else
+				pattern = [[
+				*** found 17 target(s)...
+				*** updating 5 target(s)...
+				&@ C.$(COMPILER).PCH <$(TOOLCHAIN_GRIST):helloworld%-%x+>precomp.h.gch 
+				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/file.o 
+				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/main.o 
+				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/createprecomp.o 
+				@ $(C_LINK) <$(TOOLCHAIN_GRIST):helloworld>helloworld 
 				*** updated 5 target(s)...
 ]]
+			end
 		end
 
 		TestPattern(pattern, RunJam{ '-Cjam' })
@@ -154,42 +213,49 @@ function Test()
 
 	---------------------------------------------------------------------------
 	do
-		if Platform == 'win32' then
-			pattern = [[
-				*** found 23 target(s)...
-]]
-		else
-			pattern = [[
-				*** found 17 target(s)...
-]]
-		end
-		TestPattern(pattern, RunJam{ '-Cjam' })
+		TestPattern(noopPattern, RunJam{ '-Cjam' })
 		TestDirectories(dirs)
 		TestFiles(files)
 	end
 
 	---------------------------------------------------------------------------
 	do
-		os.sleep(1.0)
-		os.touch('src/createprecomp.c')
+		osprocess.sleep(1.0)
+		ospath.touch('src/createprecomp.c')
+
+		if useChecksums then
+			TestPattern(noopPattern, RunJam{ '-Cjam' })
+
+			osprocess.sleep(1.0)
+			WriteModifiedFileB()
+		end
 
 		if Platform == 'win32' then
 			pattern = [[
-*** found 23 target(s)...
+*** found 22 target(s)...
 *** updating 5 target(s)...
-@ C.vc.CC <win32!release:helloworld>precomp.h.pch
-!NEXT!@ C.vc.CC <win32!release:helloworld>../src/file.obj
-!NEXT!@ C.vc.Link <win32!release:helloworld>helloworld.exe
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/createprecomp.obj
+!NEXT!@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/file.obj
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):helloworld>helloworld.exe
 !NEXT!*** updated 5 target(s)...
 ]]
 		else
-			pattern = [[
+			if useChecksums then
+				pattern = [[
 				*** found 17 target(s)...
 				*** updating 2 target(s)...
-				@ C.gcc.CC <macosx32!release:helloworld>../src/createprecomp.o 
-				@ C.gcc.Link <macosx32!release:helloworld>helloworld
+				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/createprecomp.o 
+				*** updated 1 target(s)...
+]]
+			else
+				pattern = [[
+				*** found 17 target(s)...
+				*** updating 2 target(s)...
+				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/createprecomp.o 
+				@ $(C_LINK) <$(TOOLCHAIN_GRIST):helloworld>helloworld 
 				*** updated 2 target(s)...
 ]]
+			end
 		end
 		TestPattern(pattern, RunJam{ '-Cjam' })
 		TestDirectories(dirs)
@@ -197,7 +263,10 @@ function Test()
 	end
 
 	---------------------------------------------------------------------------
+	WriteOriginalFiles()
 	RunJam{ '-Cjam', 'clean' }
 	TestFiles(originalFiles)
 	TestDirectories(originalDirs)
 end
+
+TestChecksum = Test

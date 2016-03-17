@@ -1,5 +1,14 @@
-require 'ex'
+ospath = require 'ospath'
+osprocess = require 'osprocess'
 local filefind = require 'filefind'
+
+scriptPath = ospath.simplify(ospath.make_absolute(((debug.getinfo(1, "S").source:match("@(.+)[\\/]") or '.') .. '\\'):gsub('\\', '/'):lower()))
+
+function io.writeall(filename, buffer)
+    local file = io.open(filename, 'wb')
+    file:write(buffer)
+    file:close()
+end
 
 rotatingCharacters = { '|', '/', '-', '\\' }
 
@@ -20,18 +29,21 @@ end
 
 function RunJam(commandLine)
 	if not commandLine then commandLine = {} end
-	table.insert(commandLine, 1, 'jam')
+	table.insert(commandLine, 1, JAM_EXECUTABLE)
 	table.insert(commandLine, 2, '-j1')
 
 	if Compiler then
 		table.insert(commandLine, 3, 'COMPILER=' .. Compiler)
 	end
 
-	if Platform == 'win32' then
-		commandLine[#commandLine + 1] = '2>&1'
+	commandLine[#commandLine + 1] = 'c.toolchain=' .. PlatformDir .. '/release'
+	if useChecksums then
+		commandLine[#commandLine + 1] = 'JAM_USE_CHECKSUMS=1'
 	end
 
-	return ex.collectlines(commandLine)
+	commandLine.stderr_to_stdout = true
+
+	return osprocess.collectlines(commandLine)
 end
 
 function TestExpression(result, failMessage)
@@ -58,6 +70,11 @@ function TestPattern(patterns, lines)
 		patterns = splitLines
 	end
 
+	local finishedPattern = '%*%*%* finished in [%d%.]+ sec'
+	if patterns[#patterns]  and  not patterns[#patterns]:match(finishedPattern) then
+		patterns[#patterns + 1] = '&' .. finishedPattern
+	end
+
 	local lineIndex = 1
 	local patternIndex = 1
 	local oooGroupPatternsToFind = {}
@@ -74,7 +91,14 @@ function TestPattern(patterns, lines)
 			pattern = patterns[patternIndex]
 			if pattern then
 				pattern = pattern:gsub('$%(SUFEXE%)', SUFEXE)
+				pattern = pattern:gsub('$%(COMPILER%)', COMPILER)
+				pattern = pattern:gsub('$%(C_CC%)', C_CC)
+				pattern = pattern:gsub('$%(C_ARCHIVE%)', C_ARCHIVE)
+				pattern = pattern:gsub('$%(C_LINK%)', C_LINK)
+				pattern = pattern:gsub('$%(PLATFORM%)', PlatformDir)
 				pattern = pattern:gsub('$%(PLATFORM_CONFIG%)', PlatformDir .. '!release')
+				pattern = pattern:gsub('$%(TOOLCHAIN_GRIST%)', 'c/' .. PlatformDir .. '/release')
+				pattern = pattern:gsub('$%(CWD%)', patterncwd)
 			end
 		end
 
@@ -90,6 +114,14 @@ function TestPattern(patterns, lines)
 					if pattern:sub(1, 10) ~= '!OOOGROUP!' then break end
 					pattern = pattern:sub(11)
 					pattern = pattern:gsub('$%(SUFEXE%)', SUFEXE)
+					pattern = pattern:gsub('$%(COMPILER%)', COMPILER)
+					pattern = pattern:gsub('$%(C_CC%)', C_CC)
+					pattern = pattern:gsub('$%(C_ARCHIVE%)', C_ARCHIVE)
+					pattern = pattern:gsub('$%(C_LINK%)', C_LINK)
+					pattern = pattern:gsub('$%(PLATFORM%)', PlatformDir)
+					pattern = pattern:gsub('$%(PLATFORM_CONFIG%)', PlatformDir .. '!release')
+					pattern = pattern:gsub('$%(TOOLCHAIN_GRIST%)', 'c/' .. PlatformDir .. '/release')
+					pattern = pattern:gsub('$%(CWD%)', patterncwd)
 					oooGroupPatternsToFind[#oooGroupPatternsToFind + 1] = pattern
 					pattern = nil
 					patternIndex = patternIndex + 1
@@ -107,6 +139,26 @@ function TestPattern(patterns, lines)
 			end
 		else
 			hi = 5
+		end
+
+		if pattern  and  pattern:match('%*%*%* found %d+ target%(s%)%.%.%.') then
+			pattern = '&%*%*%* found %d+ target%(s%)%.%.%.'
+		end
+
+--[[
+		if pattern  and  pattern:match('%*%*%* updating %d+ target%(s%)%.%.%.') then
+			pattern = '&%*%*%* updating %d+ target%(s%)%.%.%.'
+		end
+--]]
+
+--[[
+		if pattern  and  pattern:match('%*%*%* updated %d+ target%(s%)%.%.%.') then
+			pattern = '&%*%*%* updated %d+ target%(s%)%.%.%.'
+		end
+--]]
+
+		if pattern  and  pattern:match(finishedPattern) then
+			pattern = '&' .. finishedPattern
 		end
 
 		local patternMatches = false
@@ -165,7 +217,9 @@ function TestPattern(patterns, lines)
 						patternMatches = line == testPattern
 					end
 
-					if oooPatternsToFind[1]  and  not patternMatches then
+					if not next  and  not ooo  and  not oooPatternsToFind[1]  and  pattern  and  not patternMatches then
+						error('Found: ' .. line .. '\n\tExpected: ' .. (pattern or oooGroupPatternsToFind[1]) .. '\n\nFull output:\n' .. table.concat(lines, '\n'))
+					elseif oooPatternsToFind[1]  and  not patternMatches then
 						if not ooo  and  pattern then
 							error('Found: ' .. line .. '\n\tExpected: ' .. (pattern or oooGroupPatternsToFind[1]) .. '\n\nFull output:\n' .. table.concat(lines, '\n'))
 						else
@@ -196,15 +250,17 @@ function TestPattern(patterns, lines)
  		error('\nExpecting the following output:\n' .. table.concat(oooPatternsToFind, '\n'))
  	end
 	if patternIndex <= #patterns then
-		local patternsExpected = {}
-		for index = patternIndex, #patterns do
-			patternsExpected[#patternsExpected + 1] = patterns[index]
+		if patterns[patternIndex] ~= '&' .. finishedPattern then
+			local patternsExpected = {}
+			for index = patternIndex, #patterns do
+				patternsExpected[#patternsExpected + 1] = patterns[index]
+			end
+			local linesExpected = {}
+			for index = lastMatchedLineIndex + 1, #lines do
+				linesExpected[#linesExpected + 1] = lines[index]
+			end
+			error('\nExpected:\n' .. table.concat(patternsExpected, '\n') .. '\n\nFull output:\n' .. table.concat(linesExpected, '\n'))
 		end
-		local linesExpected = {}
-		for index = lastMatchedLineIndex + 1, #lines do
-			linesExpected[#linesExpected + 1] = lines[index]
-		end
-		error('\nExpected:\n' .. table.concat(patternsExpected, '\n') .. '\n\nFull output:\n' .. table.concat(linesExpected, '\n'))
 	end
 
 	TestSucceeded()
@@ -216,13 +272,18 @@ function TestDirectories(expectedDirs)
 	TestNumberUpdate()
 
 	local expectedDirsMap = {}
+	local newExpectedDirs = {}
 	for _, dirName in ipairs(expectedDirs) do
 		dirName = dirName:gsub('$PlatformDir', PlatformDir)
+		dirName = dirName:gsub('$%(PLATFORM_CONFIG%)', PlatformDir .. '-release')
+		dirName = dirName:gsub('$%(TOOLCHAIN_PATH%)', '.build/' .. PlatformDir .. '-release/TOP')
+		--dirName = dirName:gsub('$%(TOOLCHAIN_PATH%)', PlatformDir .. '-release')
 		if dirName:sub(1, 1) == '?' then
 			expectedDirsMap[dirName:sub(2)] = '?'
 		else
 			expectedDirsMap[dirName] = true
 		end
+		newExpectedDirs[#newExpectedDirs + 1] = dirName
 	end
 
 	local foundDirsMap = {}
@@ -231,12 +292,35 @@ function TestDirectories(expectedDirs)
 	end
 
 	local extraDirs = {}
+	local expectedSubDirs = {}
+	for expectedDir in pairs(expectedDirsMap) do
+		local path = ""
+		for component in expectedDir:gmatch('([^/]+)') do
+			path = path .. component .. '/'
+			expectedSubDirs[path] = true
+		end
+	end
+	for expectedSubDir in pairs(expectedSubDirs) do
+		if not foundDirsMap[expectedSubDir] then
+			extraDirs[#extraDirs + 1] = expectedDir
+		else
+			foundDirsMap[expectedSubDir] = nil
+			expectedDirsMap[expectedSubDir] = nil
+		end
+	end
+
 	for foundDir in pairs(foundDirsMap) do
 		if not expectedDirsMap[foundDir] then
 			local found = false
-			for _, dirName in ipairs(expectedDirs) do
+			for _, dirName in ipairs(newExpectedDirs) do
+				local origDirName = dirName
+				dirName = dirName:gsub('%%%-', '\x02')
+				dirName = dirName:gsub('%%', '\x01')
+				dirName = dirName:gsub('%-', '%%-')
+				dirName = dirName:gsub('\x02', '%%-')
+				dirName = dirName:gsub('\x01', '%%')
 				if foundDir:match('^' .. dirName .. '$') then
-					expectedDirsMap[dirName] = nil
+					expectedDirsMap[origDirName] = nil
 					found = true
 					break
 				end
@@ -248,7 +332,9 @@ function TestDirectories(expectedDirs)
 		end
 
 		expectedDirsMap[foundDir] = nil
-	end
+ 	end
+
+
 	if #extraDirs > 0 then
 		table.sort(extraDirs)
 		error('These directories should not exist:\n\t\t' .. table.concat(extraDirs, '\n\t\t'))
@@ -270,16 +356,28 @@ end
 function TestFiles(expectedFiles)
 	TestNumberUpdate()
 
+	expectedFiles[#expectedFiles + 1] = '?.build/.depcache'
+	for _, fileName in ipairs(expectedFiles) do
+		if fileName:match('%.exe$') then
+			 expectedFiles[#expectedFiles + 1] = '?' .. fileName .. '.intermediate.manifest'
+		end
+	end
+
 	local expectedFilesMap = {}
+	local newExpectedFiles = {}
 	for _, fileName in ipairs(expectedFiles) do
 		fileName = fileName:gsub('$PlatformDir', PlatformDir):gsub('$%(SUFEXE%)', SUFEXE)
 		fileName = fileName:gsub('$%(PLATFORM_CONFIG%)', PlatformDir .. '-release')
+		fileName = fileName:gsub('$%(TOOLCHAIN_PATH%)', '.build/' .. PlatformDir .. '-release/TOP')
+		--fileName = fileName:gsub('$%(TOOLCHAIN_PATH%)', PlatformDir .. '-release')
+		fileName = fileName:gsub('$%(CWD%)', patterncwd)
 		if fileName:match('vc.pdb$') then fileName = '?' .. fileName end
 		if fileName:sub(1, 1) == '?' then
 			expectedFilesMap[fileName:sub(2)] = '?'
 		else
 			expectedFilesMap[fileName] = true
 		end
+		newExpectedFiles[#newExpectedFiles + 1] = fileName
 	end
 
 	local foundFilesMap = {}
@@ -290,12 +388,18 @@ function TestFiles(expectedFiles)
 	local extraFiles = {}
 	for foundFile in pairs(foundFilesMap) do
 		if foundFile ~= 'test.lua'  and  foundFile ~= 'test.out'  and  not foundFile:match('%.swp')
-				and  not foundFile:match('~$') then
+				and  not foundFile:match('~$')  and  not foundFile:match('%.swo') then
 			if not expectedFilesMap[foundFile] then
 				local found = false
-				for _, fileName in ipairs(expectedFiles) do
+				for _, fileName in ipairs(newExpectedFiles) do
+					local origFileName = fileName
+					fileName = fileName:gsub('%%%-', '\x02')
+					fileName = fileName:gsub('%%', '\x01')
+					fileName = fileName:gsub('%-', '%%-')
+					fileName = fileName:gsub('\x02', '%%-')
+					fileName = fileName:gsub('\x01', '%%')
 					if foundFile:match('^' .. fileName .. '$') then
-						expectedFilesMap[fileName] = nil
+						expectedFilesMap[origFileName] = nil
 						found = true
 						break
 					end
@@ -328,24 +432,37 @@ end
 
 -- Detect OS
 if os.getenv("OS") == "Windows_NT" then
- 	Platform = 'win32'
-	PlatformDir = 'win32'
+	Platform = 'win32'
+	PlatformDir = 'win64'
 	SUFEXE = '.exe'
-elseif os.getenv("OSTYPE") == "darwin9.0" then
-	Platform = 'macosx'
-	PlatformDir = 'macosx32'
-	SUFEXE = ''
+	COMPILER = 'vc'
+	C_CC = 'C.vc.CC'
+	C_ARCHIVE = 'C.vc.Archive'
+	C_LINK = 'C.vc.Link'
 else
 	local f = io.popen('uname')
-	uname = f:read('*a'):lower():gsub('\n', '')
-	f:close()
+	if f then
+		uname = f:read('*a')
+		if uname then
+			uname = uname:lower():gsub('\n', '')
+		end
+		f:close()
+	end
 
-	if uname == 'darwin' then
+	if not uname  or  uname == 'darwin' then
 		Platform = 'macosx'
 		PlatformDir = 'macosx32'
+		COMPILER = 'clang'
+		C_CC = 'C.clang.CC'
+		C_ARCHIVE = 'C.macosx.clang.Archive'
+		C_LINK = 'C.macosx.clang.Link'
 	elseif uname == 'linux' then
 		Platform = 'linux'
 		PlatformDir = 'linux32'
+		COMPILER = 'gcc'
+		C_CC = 'C.gcc.CC'
+		C_ARCHIVE = 'C.gcc.Archive'
+		C_LINK = 'C.gcc.Link'
 	end
 
 	SUFEXE = ''
@@ -354,14 +471,33 @@ end
 
 local dirs
 
-if arg and arg[1] == '--compiler' then
+local arg = { ... }
+if arg[1] == '--platform' then
+    PlatformDir = arg[2]
+    if PlatformDir == 'win64' then
+        Platform = 'win32'
+    elseif PlatformDir == 'macosx32'  or  PlatformDir == 'macosx64' then
+        Platform = 'macosx'
+    elseif PlatformDir == 'linux32'  or  PlatformDir == 'linux64' then
+        Platform = 'linux'
+    end
+    table.remove(arg, 1)
+    table.remove(arg, 1)
+end
+
+if arg[1] == '--compiler' then
 	Compiler = arg[2]
 	table.remove(arg, 1)
 	table.remove(arg, 1)
 end
 
-if arg and arg[1] then
-	dirs = arg
+if arg[1] then
+	dirs = {}
+	for _, thedir in ipairs(arg) do
+		for entry in filefind.glob(ospath.add_slash(thedir)) do
+			dirs[#dirs + 1] = entry.filename
+		end
+	end
 else
 	dirs = {}
 	for entry in filefind.glob('**/') do
@@ -369,6 +505,12 @@ else
 	end
 end
 table.sort(dirs)
+
+if Platform == 'macosx' then
+	JAM_EXECUTABLE = ospath.join(scriptPath, '..', 'bin', PlatformDir, 'jam')
+else
+	JAM_EXECUTABLE = "jam"
+end
 
 function ErrorHandler(inMessage)
 	local message = {}
@@ -380,48 +522,67 @@ function ErrorHandler(inMessage)
 	return table.concat(message)
 end
 
-local cwd = os.getcwd()
+cwd = ospath.getcwd()
+
 for _, dir in ipairs(dirs) do
-	os.chdir(dir)
-	if os.path.exists('test.lua') then
-		local text = 'Running tests for ' .. dir:gsub('[\\/]$', '') .. '...'
-		io.write(('%-60s'):format(text))
-		io.flush()
-
-		local chunk, err = loadfile('test.lua')
-		if chunk then
-			testNumber = 0
-
-			chunk()
-			local ret, err = xpcall(Test, ErrorHandler)
-			if not ret then
-				io.write('FAILED!\n')
-				io.write('\tFailed test #' .. testNumber)
-
-				local lineNumber = ErrorTraceback:match('test.lua:(%d-):')
-				if lineNumber then
-					io.write(' at line number ' .. lineNumber)
-				end
-				io.write('.\n\n')
-
-				err = err:gsub('^runtests.lua:%d-: ', '')
-				io.write('\t' .. err .. '\n')
-				print(ErrorTraceback)
-			else
-				io.write('OK\n')
-			end
-
-			if PostErrorMessage then
-				io.write('\t' .. PostErrorMessage .. '\n')
-				PostErrorMessage = nil
-			end
-		else
+	ospath.chdir(dir)
+--	patterncwd = ospath.add_slash(ospath.make_slash(ospath.getcwd()))
+	patterncwd = ""
+	if ospath.exists('test.lua') then
+		local chunk, err = loadfile(ospath.make_absolute('test.lua'))
+		if not chunk then
 			io.write('FAILED!\n')
 			io.write('\tError compiling test.lua!\n')
 			io.write('\t' .. err .. '\n')
+		else
+			function RunTest(whichKind)
+				Test = nil
+				TestChecksum = nil
+				useChecksums = whichKind == 'checksum'
+				chunk()
+				if whichKind == 'timestamp'  and  not Test then
+					return
+				end
+				if whichKind == 'checksum'  and  not TestChecksum then
+					return
+				end
+
+				local text = ('[%-9s]'):format(whichKind) .. ' Running tests for ' .. dir:gsub('[\\/]$', '')
+				io.write(('%-60s'):format(text))
+				io.flush()
+
+				testNumber = 0
+
+				local ret, err = xpcall(whichKind == 'checksum'  and  TestChecksum  or  Test, ErrorHandler)
+				if not ret then
+					io.write('FAILED!\n')
+					io.write('\tFailed test #' .. testNumber)
+
+					local lineNumber = ErrorTraceback:match('test.lua:(%d-):')
+					if lineNumber then
+						io.write(' at line number ' .. lineNumber)
+					end
+					io.write('.\n\n')
+
+					err = err:gsub('^runtests.lua:%d-: ', '')
+					io.write('\t' .. err .. '\n')
+					print(ErrorTraceback)
+	--os.exit()
+				else
+					io.write('OK\n')
+				end
+
+				if PostErrorMessage then
+					io.write('\t' .. PostErrorMessage .. '\n')
+					PostErrorMessage = nil
+				end
+			end
+
+			RunTest('timestamp')
+			RunTest('checksum')
 		end
 	end
-	os.chdir(cwd)
+	ospath.chdir(cwd)
 end
 
 print()

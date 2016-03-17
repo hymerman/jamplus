@@ -92,6 +92,9 @@
 # include "filesys.h"
 #endif
 
+#include "hash.h"
+# include "fileglob.h"
+
 # ifndef max
 # define max( a,b ) ((a)>(b)?(a):(b))
 # endif
@@ -154,6 +157,10 @@ void onintr( int disp );
 /*
  * make() - make a target, given its name
  */
+
+#ifdef OPT_USE_CHECKSUMS_EXT
+int usechecksums = 0;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 #ifdef OPT_MULTIPASS_EXT
 int actionpass = 0;
@@ -269,6 +276,7 @@ int compare_sortedtargets( const void *_left, const void *_right ) {
 	return strcmp( right->filename, left->filename );
 }
 
+
 static void remove_empty_dirs()
 {
 	BUFFER lastdirbuff;
@@ -352,6 +360,161 @@ static void remove_empty_dirs()
 
 #endif /* OPT_REMOVE_EMPTY_DIRS_EXT */
 
+
+#ifdef OPT_CLEAN_GLOBS_EXT
+
+struct usedtargetsdata {
+	const char	*name;
+} ;
+
+typedef struct usedtargetsdata USEDTARGETSDATA ;
+static struct hash *usedtargetshash;
+
+
+void add_used_target_to_hash(TARGET *t) {
+	USEDTARGETSDATA usedtargetsdata, *c = &usedtargetsdata;
+	if (!usedtargetshash) {
+		usedtargetshash = hashinit(sizeof(USEDTARGETSDATA), "usedtargets");
+	}
+	c->name = t->name;
+	if (hashenter(usedtargetshash, (HASHDATA **)&c)) {
+		c->name = newstr(t->name);
+	}
+}
+
+
+static void add_files_to_keepfileshash( void *userdata, HASHDATA *hashdata ) {
+	struct hash *keepfileshash = (struct hash *)userdata;
+	USEDTARGETSDATA usedfilesdata, *c = &usedfilesdata;
+	USEDTARGETSDATA *data = (USEDTARGETSDATA *)hashdata;
+	const char *target;
+# ifdef DOWNSHIFT_PATHS
+	char path[MAXJPATH], *p;
+# endif
+
+	TARGET *t = bindtarget( data->name );
+	if( t->binding == T_BIND_UNBOUND && !( t->flags & T_FLAG_NOTFILE ) )
+	{
+		pushsettings( t->settings );
+		t->boundname = search( t->name, &t->time );
+		t->binding = t->time ? T_BIND_EXISTS : T_BIND_MISSING;
+		popsettings( t->settings );
+	}
+
+	target = t->boundname;
+
+# ifdef DOWNSHIFT_PATHS
+	p = path;
+	do *p++ = (char)tolower(*target); while (*target++);
+	target = path;
+# endif
+
+	c->name = target;
+	if (hashenter(keepfileshash, (HASHDATA **)&c)) {
+		c->name = newstr(target);
+	}
+}
+
+static void clean_unused_files() {
+	LISTITEM *l;
+	LIST* clean_verbose;
+	LIST* clean_noop;
+	LIST* clean_roots;
+	struct hash *keepfileshash;
+	int verbose = 0;
+	int noop = 0;
+
+	keepfileshash = hashinit(sizeof(USEDTARGETSDATA), "usedfiles");
+
+	for (l = list_first(var_get("CLEAN.KEEP_TARGETS")); l; l = list_next(l)) {
+		USEDTARGETSDATA keepfilesdata;
+		keepfilesdata.name = list_value(l);
+		add_files_to_keepfileshash(keepfileshash, (HASHDATA *)&keepfilesdata);
+	}
+
+	if (usedtargetshash) {
+		hashiterate(usedtargetshash, add_files_to_keepfileshash, keepfileshash);
+	}
+
+	for (l = list_first(var_get("CLEAN.KEEP_WILDCARDS")); l; l = list_next(l)) {
+		fileglob *glob = fileglob_Create(list_value(l));
+		while (fileglob_Next(glob)) {
+			USEDTARGETSDATA usedfilesdata, *c = &usedfilesdata;
+			const char *target = fileglob_FileName(glob);
+# ifdef DOWNSHIFT_PATHS
+			char path[MAXJPATH];
+			char *p = path;
+
+			do *p++ = (char)tolower(*target);
+			while (*target++);
+
+			target = path;
+# endif
+
+			c->name = target;
+			if (hashenter(keepfileshash, (HASHDATA **)&c)) {
+				c->name = newstr(target);
+			}
+		}
+		fileglob_Destroy(glob);
+	}
+
+	clean_verbose = var_get("CLEAN.VERBOSE");
+	if (clean_verbose  &&  list_first(clean_verbose)  &&  strcmp(list_value(list_first(clean_verbose)), "1") == 0) {
+		verbose = 1;
+	}
+
+	clean_noop = var_get("CLEAN.NOOP");
+	if (clean_noop  &&  list_first(clean_noop)  &&  strcmp(list_value(list_first(clean_noop)), "1") == 0) {
+		noop = 1;
+	}
+
+	clean_roots = var_get("CLEAN.ROOTS");
+	for (l = list_first(clean_roots); l; l = list_next(l)) {
+		fileglob* glob;
+
+		glob = fileglob_Create(list_value(l));
+		while (fileglob_Next(glob)) {
+			const char *target = fileglob_FileName(glob);
+			USEDTARGETSDATA usedtargetsdata, *c = &usedtargetsdata;
+			char path[MAXJPATH];
+			char *p = path;
+
+# ifdef DOWNSHIFT_PATHS
+			do *p++ = (char)tolower(*target);
+			while (*target++);
+# else
+			strcpy(path, target);
+# endif
+			target = path;
+
+			c->name = target;
+
+			if (fileglob_IsDirectory(glob)) {
+				strcat(path, "\x01");
+			} else {
+				if (!hashcheck(keepfileshash, (HASHDATA **)&c)) {
+					if (verbose) {
+						printf("Removing %s...\n", target);
+					}
+					if (!noop) {
+						unlink(target);
+					}
+				}
+			}
+			emptydirtargets = list_append(emptydirtargets, target, 0);
+		}
+		fileglob_Destroy(glob);
+	}
+
+	hashdone(keepfileshash);
+	hashdone(usedtargetshash);
+	usedtargetshash = NULL;
+}
+
+#endif /* OPT_CLEAN_GLOBS_EXT */
+
+
 int
 make(
 	int		n_targets,
@@ -362,7 +525,15 @@ make(
 	COUNTS counts[1];
 	int status = 0;		/* 1 if anything fails */
 
-	memset( (char *)counts, 0, sizeof( *counts ) );
+#ifdef OPT_USE_CHECKSUMS_EXT
+	LIST *usechecksumslist = var_get("JAM_USE_CHECKSUMS");
+	if (usechecksumslist  &&  list_first(usechecksumslist)  &&  strcmp(list_value(list_first(usechecksumslist)), "1") == 0) {
+		LIST *nodepcachelist = var_get("JAM_NO_DEP_CACHE");
+		if (!nodepcachelist  ||  !list_first(nodepcachelist)  ||  strcmp(list_value(list_first(nodepcachelist)), "1") != 0) {
+			usechecksums = 1;
+		}
+	}
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 #ifdef OPT_INTERRUPT_FIX
 	signal( SIGINT, onintr );
@@ -371,6 +542,8 @@ make(
 #ifdef OPT_MULTIPASS_EXT
 pass:
 #endif
+	memset( (char *)counts, 0, sizeof( *counts ) );
+
 	for( i = 0; i < n_targets; i++ )
 	{
 	    TARGET *t = bindtarget( targets[i] );
@@ -436,6 +609,8 @@ pass:
 		donestamps();
 		++actionpass;
 
+		printf( "*** executing pass %d...\n", actionpass + 1 );
+
 		for( ; l; l = list_next( l ) ) {
 			++count;
 		}
@@ -443,15 +618,15 @@ pass:
 		sortedfiles = malloc( sizeof( QUEUEDFILEINFO ) * count );
 		i = 0;
 		for( l = list_first( origqueuedjamfiles ); l; l = list_next( l ) ) {
-			char *colon = strchr( list_value(l), ':' );
+			char *separator = strchr( list_value(l), '\xff' );
 			TARGET *t;
-			*colon = 0;
+			*separator = 0;
 			t = bindtarget(list_value(l));
-			*colon = ':';
+			*separator = '\xff';
 			pushsettings( t->settings );
 			t->boundname = search( t->name, &t->time );
 			popsettings( t->settings );
-			sortedfiles[i].priority = atoi( colon + 1 );
+			sortedfiles[i].priority = atoi( separator + 1 );
 			sortedfiles[i].filename = t->boundname;
 			++i;
 		}
@@ -474,6 +649,12 @@ pass:
 	if ( globs.noexec == 0 )
 		hcache_done();
 #endif
+
+    donestamps();
+
+#ifdef OPT_CLEAN_GLOBS_EXT
+	clean_unused_files();
+#endif /* OPT_CLEAN_GLOBS_EXT */
 
 #ifdef OPT_REMOVE_EMPTY_DIRS_EXT
 	remove_empty_dirs();
@@ -545,12 +726,22 @@ make0(
 	TARGETS	*c, *incs;
 	TARGET 	*ptime = t;
 	time_t	last, leaf, hlast;
+#ifdef OPT_USE_CHECKSUMS_EXT
+	int	lastmd5filedirty;
+	int	hmd5filedirty;
+	int	leafmd5filedirty;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 	int	fate;
 	const char *flag = "";
 	SETTINGS *s;
 #ifdef OPT_GRAPH_DEBUG_EXT
 	int	savedFate, oldTimeStamp;
 #endif
+	int localusechecksums =
+#ifdef OPT_USE_CHECKSUMS_EXT
+	        usechecksums  ||
+#endif /* OPT_USE_CHECKSUMS_EXT */
+            ( t->flags & T_FLAG_SCANCONTENTS );
 
 	/*
 	 * Step 1: initialize
@@ -572,6 +763,9 @@ make0(
 #else
 	t->fate = T_FATE_MAKING;
 #endif
+#ifdef OPT_USE_CHECKSUMS_EXT
+	t->flags &= ~T_FLAG_CHECKSUM_VISITED;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 	/*
 	 * Step 2: under the influence of "on target" variables,
@@ -590,6 +784,13 @@ make0(
 		t->boundname = search( t->name, &t->time );
 		t->binding = t->time ? T_BIND_EXISTS : T_BIND_MISSING;
 	}
+
+#ifdef OPT_USE_CHECKSUMS_EXT
+	if ( localusechecksums && !( t->flags & ( T_FLAG_NOUPDATE | T_FLAG_NOTFILE ) ) )
+	{
+		getcachedmd5sum(t, 1);
+	}
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 	/* INTERNAL, NOTFILE header nodes have the time of their parents */
 
@@ -690,7 +891,11 @@ make0(
 			printf( "warning: %s depends on itself\n", c->target->name );
 #ifdef OPT_FIX_UPDATED
 		else if( ptime && ptime->binding != T_BIND_UNBOUND &&
+#ifdef OPT_USE_CHECKSUMS_EXT
+			(localusechecksums ? c->target->contentmd5sum_file_dirty : c->target->time > ptime->time) &&
+#else
 			c->target->time > ptime->time &&
+#endif /* OPT_USE_CHECKSUMS_EXT */
 			c->target->fate < T_FATE_NEWER )
 		{
 			/*
@@ -809,8 +1014,15 @@ make0(
 			/* If the includes are newer than we are their original target
 				also needs to be marked newer. This is needed so that 'updated'
 				correctly will include the original target in the $(<) variable. */
-			if(c->target->includes->time > ptime->time || c->target->includes->fate > T_FATE_STABLE)
+			if(
+#ifdef OPT_USE_CHECKSUMS_EXT
+				(localusechecksums ? c->target->includes->contentmd5sum_file_dirty : c->target->includes->time > ptime->time)
+#else
+				c->target->includes->time > ptime->time
+#endif /* OPT_USE_CHECKSUMS_EXT */
+				|| c->target->includes->fate > T_FATE_STABLE) {
 				c->target->fate = max( T_FATE_NEWER, c->target->fate );
+			}
 #endif
 	    }
 	}
@@ -825,6 +1037,10 @@ make0(
 
 	last = 0;
 	leaf = 0;
+#ifdef OPT_USE_CHECKSUMS_EXT
+	lastmd5filedirty = 0;
+	leafmd5filedirty = 0;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 	fate = T_FATE_STABLE;
 
 	for( c = t->depends; c; c = c->next )
@@ -840,14 +1056,23 @@ make0(
 		/* the leaf source nodes. */
 
 		leaf = max( leaf, c->target->leaf );
+#ifdef OPT_USE_CHECKSUMS_EXT
+		leafmd5filedirty |= c->target->leafmd5filedirty;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 		if( t->flags & T_FLAG_LEAVES )
 		{
 			last = leaf;
+#ifdef OPT_USE_CHECKSUMS_EXT
+			lastmd5filedirty = leafmd5filedirty;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 			continue;
 		}
 
 		last = max( last, c->target->time );
+#ifdef OPT_USE_CHECKSUMS_EXT
+		lastmd5filedirty |= c->target->contentmd5sum_file_dirty;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 #ifdef OPT_GRAPH_DEBUG_EXT
 		if( DEBUG_FATE && fate < c->target->fate ) {
 			printf( "fate change  %s from %s to %s by dependency %s\n",
@@ -867,6 +1092,9 @@ make0(
 	 */
 
 	hlast = t->includes ? t->includes->time : 0;
+#ifdef OPT_USE_CHECKSUMS_EXT
+	hmd5filedirty = t->includes ? t->includes->contentmd5sum_file_dirty : 0;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 	/* Step 4c: handle NOUPDATE oddity */
 
@@ -885,6 +1113,9 @@ make0(
 		}
 #endif
 		last = 0;
+#ifdef OPT_USE_CHECKSUMS_EXT
+		lastmd5filedirty = 0;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 		t->time = 0;
 		fate = T_FATE_STABLE;
 	}
@@ -928,13 +1159,21 @@ make0(
 					break;
 				}
 			}
-			for ( targets = actions->action->sources; targets; targets = targets->next )
+			if ( !targets->parentcommandlineoutofdate )
 			{
-				for( c = t->depends; c; c = c->next )
+				for ( targets = actions->action->sources; targets; targets = targets->next )
 				{
-					if ( targets->target == c->target )
+					for( c = t->depends; c; c = c->next )
 					{
-						targets->parentcommandlineoutofdate = 1;
+						if ( targets->target == c->target )
+						{
+							targets->parentcommandlineoutofdate = 1;
+							break;
+						}
+					}
+					if ( targets->parentcommandlineoutofdate )
+					{
+						break;
 					}
 				}
 			}
@@ -956,18 +1195,38 @@ make0(
 	{
 		fate = T_FATE_MISSING;
 	}
-	else if( t->binding == T_BIND_EXISTS && last > t->time )
+	else if( t->binding == T_BIND_EXISTS
+#ifdef OPT_USE_CHECKSUMS_EXT
+		&& (localusechecksums ? lastmd5filedirty : last > t->time)
+#else
+		&& last > t->time
+#endif /* OPT_USE_CHECKSUMS_EXT */
+		)
 	{
 #ifdef OPT_GRAPH_DEBUG_EXT
 		oldTimeStamp = 1;
 #endif
 		fate = T_FATE_OUTDATED;
 	}
-	else if( t->binding == T_BIND_PARENTS && last > p->time )
+	else if(
+		t->binding == T_BIND_PARENTS
+#ifdef OPT_USE_CHECKSUMS_EXT
+		&& (localusechecksums ? lastmd5filedirty : last > p->time)
+#else
+		&& last > p->time
+#endif /* OPT_USE_CHECKSUMS_EXT */
+		)
 	{
 		fate = T_FATE_NEEDTMP;
 	}
-	else if( t->binding == T_BIND_PARENTS && hlast > p->time )
+	else if(
+		t->binding == T_BIND_PARENTS
+#ifdef OPT_USE_CHECKSUMS_EXT
+		&& (localusechecksums ? hmd5filedirty : hlast > p->time)
+#else
+		&& hlast > p->time
+#endif /* OPT_USE_CHECKSUMS_EXT */
+		)
 	{
 #ifdef OPT_GRAPH_DEBUG_EXT
 		oldTimeStamp = 1;
@@ -988,7 +1247,13 @@ make0(
 	}
 	// See http://maillist.perforce.com/pipermail/jamming/2003-January/001853.html.
 	else if( t->binding == T_BIND_EXISTS && p &&
-		p->binding != T_BIND_UNBOUND && t->time > p->time )
+		p->binding != T_BIND_UNBOUND
+#ifdef OPT_USE_CHECKSUMS_EXT
+		&& (localusechecksums ? t->contentmd5sum_file_dirty : t->time > p->time)
+#else
+		&& t->time > p->time
+#endif /* OPT_USE_CHECKSUMS_EXT */
+		)
 	{
 		fate = T_FATE_NEWER;
 	}
@@ -1020,19 +1285,41 @@ make0(
 	/* We could insist that there are updating actions for all missing */
 	/* files, but if they have dependents we just pretend it's NOTFILE. */
 
-#ifdef OPT_MULTIPASS_EXT
-	if( fate == T_FATE_MISSING && !t->actions && !t->depends && !queuedjamfiles )
-#else
 	if( fate == T_FATE_MISSING && !t->actions && !t->depends )
-#endif
 	{
+#ifdef OPT_MULTIPASS_EXT
+		if ( queuedjamfiles )
+		{
+			if( ( t->flags & T_FLAG_NOCARE ) )
+			{
+				if( !( t->flags & T_FLAG_FORCECARE ) )
+				{
+#ifdef OPT_GRAPH_DEBUG_EXT
+					if( DEBUG_FATE )
+						printf( "fate change  %s to STABLE from %s, "
+							"no actions, no dependents and don't care\n",
+							t->name, target_fate[fate]);
+#endif
+					fate = T_FATE_STABLE;
+				}
+			}
+			else if( !( t->flags & T_FLAG_FORCECARE ) )
+			{
+				printf( "don't know how to make %s\n", t->name );
+
+				fate = T_FATE_CANTFIND;
+			}
+		}
+		else
+		{
+#endif
 		if( t->flags & T_FLAG_NOCARE )
 		{
 #ifdef OPT_GRAPH_DEBUG_EXT
 			if( DEBUG_FATE )
 				printf( "fate change  %s to STABLE from %s, "
-					"no actions, no dependents and don't care\n",
-					t->name, target_fate[fate]);
+						"no actions, no dependents and don't care\n",
+						t->name, target_fate[fate]);
 #endif
 			fate = T_FATE_STABLE;
 		}
@@ -1041,7 +1328,10 @@ make0(
 			printf( "don't know how to make %s\n", t->name );
 
 			fate = T_FATE_CANTFIND;
-	    }
+		}
+#ifdef OPT_MULTIPASS_EXT
+		}
+#endif
 	}
 
 	/* Step 4f: propagate dependents' time & fate. */
@@ -1049,6 +1339,10 @@ make0(
 
 	t->time = max( t->time, last );
 	t->leaf = leaf ? leaf : t->time ;
+#ifdef OPT_USE_CHECKSUMS_EXT
+	t->contentmd5sum_file_dirty |= lastmd5filedirty;
+	t->leafmd5filedirty |= (leafmd5filedirty | t->contentmd5sum_file_dirty);
+#endif /* OPT_USE_CHECKSUMS_EXT */
 	t->fate = (char)fate;
 
 	/*

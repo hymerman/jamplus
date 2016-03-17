@@ -16,9 +16,9 @@ builtin_luafile(
 	LOL		*args,
 	int		*jmp );
 
-int luahelper_taskadd(const char* taskscript);
-int luahelper_taskisrunning(int taskid, int* returnValue);
-void luahelper_taskcancel(int taskid);
+int luahelper_taskadd(const char* taskscript, LOL* args);
+int luahelper_taskisrunning(intptr_t taskid, int* returnValue);
+void luahelper_taskcancel(intptr_t taskid);
 
 #ifdef OPT_BUILTIN_MD5CACHE_EXT
 int luahelper_md5callback(const char *filename, MD5SUM sum, const char* callback);

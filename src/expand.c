@@ -111,6 +111,9 @@ typedef struct
  * Returns a newly created list.
  */
 
+char leftParen = '(';
+char rightParen = ')';
+
 LIST *
 var_expand(
 	LIST		*prefix,
@@ -130,7 +133,7 @@ var_expand(
 
 	/* This gets alot of cases: $(<) and $(>) */
 
-	if( end - in == 4 && in[0] == '$' && in[1] == '(' && in[3] == ')' )
+	if( end - in == 4 && in[0] == '$' && in[1] == leftParen && in[3] == rightParen )
 	{
 	    switch( in[2] )
 	    {
@@ -151,10 +154,15 @@ var_expand(
 	while( in < end ) {
 	    char ch = *in++;
 	    buffer_addchar( &buff, ch );
-	    if( ch == '$' && *in == '(' )
+	    if( ch == '$' && *in == leftParen )
 		goto expand;
 #ifdef OPT_EXPAND_LITERALS_EXT
-	    if( ch == '@' && *in == '(' ) {
+	    if( ch == '@' && *in == leftParen ) {
+		literal = 1;
+		goto expand;
+	    }
+	    if( ch == '@' && in[0] == '$' && in[1] == leftParen ) {
+		++in;
 		literal = 1;
 		goto expand;
 	    }
@@ -211,14 +219,23 @@ var_expand(
 	{
 	    char ch = *in++;
 	    buffer_addchar( &buff, ch );
+        if ( ch == leftParen )
+        {
+            depth++;
+        }
+        else if ( ch == rightParen )
+        {
+            depth--;
+        }
+        else
+        {
 	    switch( ch )
 	    {
-	    case '(': depth++; break;
-	    case ')': depth--; break;
 	    case ':': buffer_deltapos( &buff, -1 ); buffer_addchar( &buff, MAGIC_COLON ); break;
 	    case '[': buffer_deltapos( &buff, -1 ); buffer_addchar( &buff, MAGIC_LEFT ); break;
 	    case ']': buffer_deltapos( &buff, -1 ); buffer_addchar( &buff, MAGIC_RIGHT ); break;
 	    }
+        }
 	}
 
 	/* Copied ) - back up. */
@@ -274,6 +291,10 @@ var_expand(
 		int sub1 = 0, sub2 = -1;
 		VAR_EDITS edits;
 		memset(&edits, 0, sizeof(VAR_EDITS));
+		if (leftParen == '{') {
+			edits.empty.ptr = "";
+			edits.empty.len = 0;
+		}
 
 		/* Look for a : modifier in the variable name */
 		/* Must copy into varname so we can modify it */
@@ -360,7 +381,7 @@ var_expand(
 
 		/* Empty w/ :E=default? */
 
-		if( !valueSliceStart && colon && edits.empty.ptr ) {
+		if( !valueSliceStart && (colon || leftParen == '{') && edits.empty.ptr ) {
 		    evalue = value = list_append( L0, edits.empty.ptr, 0 );
 		    valueSliceStart = list_first(value);
 		}
@@ -486,7 +507,7 @@ var_expand(
 
 #else
 				while ( ptr != endptr ) {
-					if ( *ptr == ' '  ||  *ptr == '\\'  ||  *ptr == '('  ||  *ptr == ')'  ||  *ptr == '"' ) {
+					if ( *ptr == ' '  ||  *ptr == '\\'  ||  *ptr == leftParen  ||  *ptr == rightParen  ||  *ptr == '"' ||  *ptr == '$' ) {
 						buffer_addchar( &escapebuff, '\\' );
 					}
 					buffer_addchar( &escapebuff, *ptr );
@@ -845,7 +866,11 @@ var_edit_file(
 
 	/* Put filename back together */
 
+#ifdef OPT_ROOT_PATHS_AS_ABSOLUTE_EXT
+	path_build( &pathname, buf, 0, 1 );
+#else
 	path_build( &pathname, buf, 0 );
+#endif
 	buffer_addstring( buff, buf, strlen( buf ) + 1 );
 }
 

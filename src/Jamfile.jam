@@ -115,6 +115,7 @@ Option OPT_BUILTIN_PUTENV_EXT ;
 Option OPT_BUILTIN_SPLIT_EXT ;
 Option OPT_BUILTIN_SUBST_EXT ;
 Option OPT_CIRCULAR_GENERATED_HEADER_FIX ;
+Option OPT_CLEAN_GLOBS_EXT ;
 if $(OS) = NT
 {
 	Option OPT_BUILTIN_W32_GETREG_EXT : yes ;
@@ -151,6 +152,7 @@ Option OPT_INTERRUPT_FIX ;
 Option OPT_JAMFILE_BOUNDNAME_EXT ;
 Option OPT_JOB_SLOT_EXT ;
 Option OPT_LINE_FILTER_SUPPORT ;
+Option OPT_LOAD_MISSING_RULE_EXT ;
 Option OPT_MINUS_EQUALS_EXT ;
 Option OPT_MULTIPASS_EXT ;
 Option OPT_NOCARE_NODES_EXT ;
@@ -174,6 +176,7 @@ Option OPT_SLASH_MODIFIERS_EXT ;
 Option OPT_TIMESTAMP_IMMEDIATE_PARENT_CHECK_EXT ;
 Option OPT_TIMESTAMP_EXTENDED_PARENT_CHECK_EXT2 ;
 Option OPT_UPDATED_CHILD_FIX ;
+Option OPT_USE_CHECKSUMS_EXT ;
 Option OPT_VAR_CWD_EXT : yes ;
 Option OPT_BUILTIN_LUA_SUPPORT_EXT ;
 
@@ -203,8 +206,10 @@ else if $(UNIX)
 #	}
 #	CCFLAGS += -Wall ;
 
-	if $(OS) = LINUX {
-		C.LinkFlags jam : -ldl ;
+	if $(OS) != LINUX {
+		#“C.LinkPrebuiltLibraries jam : stdc++-static ;
+	} else {
+		C.LinkFlags jam : -Wl,--no-as-needed -ldl ;
 	}
 }
 else
@@ -293,6 +298,7 @@ if $(CONFIG) in release releaseltcg {
 }
 
 mkjambase.exe = [ C.Application mkjambase : mkjambase.c ] ;
+mkjambase.exe = $(mkjambase.exe[1]) ;
 
 if $(VMS)
 {
@@ -334,25 +340,49 @@ if $(LUA_BIN)
 	if $(OS) = NT
 	{
 		LUA_SRCS =
-				lua/ex.lua
+				lua/copas.lua
+				lua/coxpcall.lua
 				lua/expand.lua
 				lua/getopt.lua
 				lua/lanes.lua
+				lua/ospath.lua
+				lua/osprocess.lua
+				lua/plist.lua
+				lua/socket.lua
+				lua/ssl.lua
+				lua/xavante.lua
 				lua/xmlize.lua
+				lua/socket/http.lua
+				lua/socket/url.lua
 				lua/lxp/lom.lua
+				lua/xavante/encoding.lua
+				lua/xavante/filehandler.lua
+				lua/xavante/httpd.lua
+				lua/xavante/mime.lua
+				lua/xavante/patternhandler.lua
+				lua/xavante/redirecthandler.lua
+				lua/xavante/urlhandler.lua
+				lua/xavante/vhostshandler.lua
 		;
 
 		if $(CONFIG) = debug
 		{
 			LUA_SRCS +=
 				lua.debug.exe
-				lua5.1.debug.dll
-				lua51_debug.dll
-				modules/ex.debug.dll
+				lua53_debug.dll
+				lua-tilde.debug.dll
+				modules/cjson.debug.dll
+				modules/ffi.debug.dll
 				modules/filefind.debug.dll
 				modules/lanes/core.debug.dll
+				modules/socket/core.debug.dll
+				modules/lfs.debug.dll
 				modules/lxp.debug.dll
 				modules/md5.debug.dll
+				modules/ospath.debug.dll
+				modules/osprocess.debug.dll
+				modules/prettydump.debug.dll
+				modules/ssl.debug.dll
 				modules/struct.debug.dll
 				modules/uuid.debug.dll
 				modules/ziparchive.debug.dll
@@ -362,13 +392,20 @@ if $(LUA_BIN)
 		{
 			LUA_SRCS +=
 				lua.exe
-				lua5.1.dll
-				lua51.dll
-				modules/ex.dll
+				lua53.dll
+				lua-tilde.dll
+				modules/socket/core.dll
+				modules/cjson.dll
+				modules/ffi.dll
 				modules/filefind.dll
 				modules/lanes/core.dll
+				modules/lfs.dll
 				modules/lxp.dll
 				modules/md5.dll
+				modules/ospath.dll
+				modules/osprocess.dll
+				modules/prettydump.dll
+				modules/ssl.dll
 				modules/struct.dll
 				modules/uuid.dll
 				modules/ziparchive.dll
@@ -385,42 +422,73 @@ if $(LUA_BIN)
 		}
 
 		LUA_SRCS =
-				share/lua/5.1/ex.lua
-				share/lua/5.1/expand.lua
-				share/lua/5.1/getopt.lua
-				share/lua/5.1/lanes.lua
-				share/lua/5.1/xmlize.lua
-				share/lua/5.1/lxp/lom.lua
+				share/lua/5.3/copas.lua
+				share/lua/5.3/coxpcall.lua
+				share/lua/5.3/expand.lua
+				share/lua/5.3/getopt.lua
+				share/lua/5.3/lanes.lua
+				share/lua/5.3/ospath.lua
+				share/lua/5.3/osprocess.lua
+				share/lua/5.3/plist.lua
+				share/lua/5.3/socket.lua
+				share/lua/5.3/ssl.lua
+				share/lua/5.3/xavante.lua
+				share/lua/5.3/xmlize.lua
+				share/lua/5.3/socket/http.lua
+				share/lua/5.3/socket/url.lua
+				share/lua/5.3/lxp/lom.lua
+				share/lua/5.3/xavante/encoding.lua
+				share/lua/5.3/xavante/filehandler.lua
+				share/lua/5.3/xavante/httpd.lua
+				share/lua/5.3/xavante/mime.lua
+				share/lua/5.3/xavante/patternhandler.lua
+				share/lua/5.3/xavante/redirecthandler.lua
+				share/lua/5.3/xavante/urlhandler.lua
+				share/lua/5.3/xavante/vhostshandler.lua
 		;
 
 		if $(CONFIG) = debug
 		{
 			LUA_SRCS +=
 				lua.debug
-				lua51_debug.so
-				lib/lua/5.1/ex.debug.$(MODULE_EXT)
-				lib/lua/5.1/filefind.debug.$(MODULE_EXT)
-				lib/lua/5.1/lanes/core.debug.$(MODULE_EXT)
-				lib/lua/5.1/lxp.debug.$(MODULE_EXT)
-				lib/lua/5.1/md5.debug.$(MODULE_EXT)
-				lib/lua/5.1/struct.debug.$(MODULE_EXT)
-				lib/lua/5.1/uuid.debug.$(MODULE_EXT)
-				lib/lua/5.1/ziparchive.debug.$(MODULE_EXT)
+				liblua53_debug.so
+				lib/lua/5.3/cjson.debug.$(MODULE_EXT)
+				lib/lua/5.3/ffi.debug.$(MODULE_EXT)
+				lib/lua/5.3/filefind.debug.$(MODULE_EXT)
+				lib/lua/5.3/lanes/core.debug.$(MODULE_EXT)
+				lib/lua/5.3/socket/core.debug.$(MODULE_EXT)
+				lib/lua/5.3/lfs.debug.$(MODULE_EXT)
+				lib/lua/5.3/lxp.debug.$(MODULE_EXT)
+				lib/lua/5.3/md5.debug.$(MODULE_EXT)
+				lib/lua/5.3/ospath.debug.$(MODULE_EXT)
+				lib/lua/5.3/osprocess.debug.$(MODULE_EXT)
+				lib/lua/5.3/prettydump.debug.$(MODULE_EXT)
+				lib/lua/5.3/ssl.debug.$(MODULE_EXT)
+				lib/lua/5.3/struct.debug.$(MODULE_EXT)
+				lib/lua/5.3/uuid.debug.$(MODULE_EXT)
+				lib/lua/5.3/ziparchive.debug.$(MODULE_EXT)
 			;
 		}
 		else
 		{
 			LUA_SRCS +=
 				lua
-				lua51.so
-				lib/lua/5.1/ex.$(MODULE_EXT)
-				lib/lua/5.1/filefind.$(MODULE_EXT)
-				lib/lua/5.1/lanes/core.$(MODULE_EXT)
-				lib/lua/5.1/lxp.$(MODULE_EXT)
-				lib/lua/5.1/md5.$(MODULE_EXT)
-				lib/lua/5.1/struct.$(MODULE_EXT)
-				lib/lua/5.1/uuid.$(MODULE_EXT)
-				lib/lua/5.1/ziparchive.$(MODULE_EXT)
+				liblua53.so
+				lib/lua/5.3/cjson.$(MODULE_EXT)
+				lib/lua/5.3/ffi.$(MODULE_EXT)
+				lib/lua/5.3/filefind.$(MODULE_EXT)
+				lib/lua/5.3/lanes/core.$(MODULE_EXT)
+				lib/lua/5.3/socket/core.$(MODULE_EXT)
+				lib/lua/5.3/lfs.$(MODULE_EXT)
+				lib/lua/5.3/lxp.$(MODULE_EXT)
+				lib/lua/5.3/md5.$(MODULE_EXT)
+				lib/lua/5.3/ospath.$(MODULE_EXT)
+				lib/lua/5.3/osprocess.$(MODULE_EXT)
+				lib/lua/5.3/prettydump.$(MODULE_EXT)
+				lib/lua/5.3/ssl.$(MODULE_EXT)
+				lib/lua/5.3/struct.$(MODULE_EXT)
+				lib/lua/5.3/uuid.$(MODULE_EXT)
+				lib/lua/5.3/ziparchive.$(MODULE_EXT)
 			;
 		}
 	}

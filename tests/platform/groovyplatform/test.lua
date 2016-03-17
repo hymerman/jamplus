@@ -4,71 +4,105 @@ function Test()
 	{
 		'CreateJamVS2008Workspace.bat',
 		'CreateJamVS2008Workspace.config',
-		'Jamfile.jam',
+		'CreateJamVS2010Workspace.bat',
+		'CreateJamVS2010Workspace.config',
+		'CreateJamVS2012Workspace.bat',
+		'CreateJamVS2012Workspace.config',
 		'helloworld.c',
+		'jam/c/toolchain/groovycompiler/groovyplatform.jam',
+		'jam/c/toolchain/groovycompiler/shared.jam',
+		'jam/c/toolchain/groovyplatform/debug.jam',
+		'jam/c/toolchain/groovyplatform/retail.jam',
+		'Jamfile.jam',
 		'test.lua',
-		'c-compilers/c-groovycompiler.jam',
-		'c-compilers/groovyplatform-autodetect.jam',
-		'c-compilers/groovyplatform-groovycompiler-debug.jam',
-		'c-compilers/groovyplatform-groovycompiler-retail.jam',
 	}
 
 	local originalDirs =
 	{
-		'c-compilers/',
+		'jam/',
+		'jam/c/',
+		'jam/c/toolchain/',
+		'jam/c/toolchain/groovycompiler/',
+		'jam/c/toolchain/groovyplatform/',
 	}
 
-	RunJam{ 'PLATFORM=groovyplatform', 'CONFIG=retail', 'clean' }
+	RunJam{ 'C.TOOLCHAIN=groovyplatform/retail', 'clean' }
 	TestDirectories(originalDirs)
 	TestFiles(originalFiles)
 
 	---------------------------------------------------------------------------
-	local pattern = [[
-*** found 7 target(s)...
-*** updating 2 target(s)...
-@ C.CC <helloworld>helloworld.o
-@ C.Link <helloworld>helloworld.retail.exe
-*** updated 2 target(s)...
+	local pattern
+	local pattern2
+	pattern = [[
+*** found 8 target(s)...
+*** updating 3 target(s)...
+@ C.groovycompiler.CC <c/groovyplatform/retail:helloworld>helloworld.o
+!NEXT!@ C.groovycompiler.Link <c/groovyplatform/retail:helloworld>helloworld$(SUFEXE)
+*** updated 3 target(s)...
+*** finished in 0.00 sec
+]]
+	pattern2 = [[
+*** found 8 target(s)...
+*** finished in 0.00 sec
 ]]
 
-	TestPattern(pattern, RunJam{ 'PLATFORM=groovyplatform', 'CONFIG=retail' })
+	TestPattern(pattern, RunJam{ 'C.TOOLCHAIN=groovyplatform/retail' })
+
+	local pass1Dirs =
+	{
+		'.build/groovyplatform-retail/TOP/',
+		'.build/groovyplatform-retail/TOP/helloworld/',
+		'jam/',
+		'jam/c/',
+		'jam/c/toolchain/',
+		'jam/c/toolchain/groovycompiler/',
+		'jam/c/toolchain/groovyplatform/',
+	}
 
 	local pass1Files =
 	{
 		'CreateJamVS2008Workspace.bat',
 		'CreateJamVS2008Workspace.config',
-		'Jamfile.jam',
+		'CreateJamVS2010Workspace.bat',
+		'CreateJamVS2010Workspace.config',
+		'CreateJamVS2012Workspace.bat',
+		'CreateJamVS2012Workspace.config',
 		'helloworld.c',
-		'helloworld.o',
-		'helloworld.retail.exe',
+		'.build/groovyplatform-retail/TOP/helloworld/helloworld.o',
+		'.build/groovyplatform-retail/TOP/helloworld/helloworld$(SUFEXE)',
+		'jam/c/toolchain/groovycompiler/groovyplatform.jam',
+		'jam/c/toolchain/groovycompiler/shared.jam',
+		'jam/c/toolchain/groovyplatform/debug.jam',
+		'jam/c/toolchain/groovyplatform/retail.jam',
+		'Jamfile.jam',
 		'test.lua',
-		'c-compilers/c-groovycompiler.jam',
-		'c-compilers/groovyplatform-autodetect.jam',
-		'c-compilers/groovyplatform-groovycompiler-debug.jam',
-		'c-compilers/groovyplatform-groovycompiler-retail.jam',
 	}
 
-	TestDirectories(originalDirs)
+	TestDirectories(pass1Dirs)
 	TestFiles(pass1Files)
 
 	---------------------------------------------------------------------------
-	local pattern2 = [[
-*** found 7 target(s)...
-]]
-	TestPattern(pattern2, RunJam{ 'PLATFORM=groovyplatform', 'CONFIG=retail' })
-	TestDirectories(originalDirs)
+	TestPattern(pattern2, RunJam{ 'C.TOOLCHAIN=groovyplatform/retail' })
+	TestDirectories(pass1Dirs)
 	TestFiles(pass1Files)
 	
 	---------------------------------------------------------------------------
-	RunJam{ 'PLATFORM=groovyplatform', 'CONFIG=retail', 'clean' }
+	RunJam{ 'C.TOOLCHAIN=groovyplatform/retail', 'clean' }
 	TestFiles(originalFiles)
 	TestDirectories(originalDirs)
 
 	---------------------------------------------------------------------------
 	local pattern3 = [[
-!NEXT!* No supported build platform found on this computer.
+!NEXT!* Toolchain [ badplatform ] not found!
+
+  Could not match any of the following rules:
+    -> C.Toolchain.badplatform
+    -> C.Toolchain.badplatform.*
+
 ]]
-	TestPattern(pattern3, RunJam{ 'PLATFORM=badplatform' })
+	TestPattern(pattern3, RunJam{ 'C.TOOLCHAIN=badplatform' })
 	TestDirectories(originalDirs)
 	TestFiles(originalFiles)
 end
+
+TestChecksum = Test

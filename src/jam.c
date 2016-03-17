@@ -187,6 +187,9 @@ struct globs globs = {
 # endif
 	0,			/* output commands, not run them */
 	0,                      /* silence */
+#ifdef OPT_BUILTIN_LUA_SUPPORT_EXT
+	0,          /* lua debugger */
+#endif
 } ;
 
 /* Symbols to be defined as true for use in Jambase */
@@ -385,14 +388,25 @@ int main( int argc, char **argv, char **arg_environ )
 #endif
 
 #ifdef OPT_SETCWD_SETTING_EXT
+#ifdef OPT_BUILTIN_LUA_SUPPORT_EXT
+	if( ( num_targets = getoptions( argc, argv, "d:C:j:f:gs:t:Tabno:qvS", optv, targets ) ) < 0 )
+#else
 	if( ( num_targets = getoptions( argc, argv, "d:C:j:f:gs:t:Tano:qvS", optv, targets ) ) < 0 )
+#endif
+#else
+#ifdef OPT_BUILTIN_LUA_SUPPORT_EXT
+	if( ( num_targets = getoptions( argc, argv, "d:j:f:gs:t:abno:qv", optv, targets ) ) < 0 )
 #else
 	if( ( num_targets = getoptions( argc, argv, "d:j:f:gs:t:ano:qv", optv, targets ) ) < 0 )
+#endif
 #endif
 	{
 	    printf( "\nusage: jam [ options ] targets...\n\n" );
 
             printf( "-a      Build all targets, even if they are current.\n" );
+#ifdef OPT_BUILTIN_LUA_SUPPORT_EXT
+            printf( "-b      Enable Lua debugger.\n" );
+#endif
 #ifdef OPT_SETCWD_SETTING_EXT
             printf( "-Cx     Set working directory to x.\n" );
 #endif
@@ -469,6 +483,11 @@ int main( int argc, char **argv, char **arg_environ )
 
 	if( ( s = getoptval( optv, 'a', 0 ) ) )
 	    anyhow++;
+
+#ifdef OPT_BUILTIN_LUA_SUPPORT_EXT
+	if( ( s = getoptval( optv, 'b', 0 ) ) )
+	    globs.lua_debugger = 1;
+#endif
 
 	if( ( s = getoptval( optv, 'S', 0 ) ) )
 	    globs.silence = 1;
@@ -590,8 +609,17 @@ int main( int argc, char **argv, char **arg_environ )
         {
             char filebuf[4096];
             if (getcwd(filebuf, sizeof(filebuf))) {
-                var_set( "CWD", list_append( L0, filebuf, 0 ),
-			 VAR_SET );
+#ifdef NT
+                /*
+                    Under the Visual Studio debugger, the drive letter is capitalized. At the Command Prompt,
+                    the drive letter is lowercase. This causes issues with the command-line MD5sums, so make
+                    the drive letter lowercase all of the time.
+                */
+                if (filebuf[1] == ':') {
+                    filebuf[0] = tolower(filebuf[0]);
+                }
+#endif /* NT */
+                var_set( "CWD", list_append( L0, filebuf, 0 ), VAR_SET );
             }
         }
 #endif
@@ -602,6 +630,12 @@ int main( int argc, char **argv, char **arg_environ )
 	    getprocesspath(fileName, 4096);
 	    var_set( "JAM_PROCESS_PATH", list_append( L0, fileName, 0 ), VAR_SET );
 	}
+	{
+		char exeName[ 4096 ];
+		getexecutablepath( exeName, 4096 );
+		var_set( "JAM_EXECUTABLE_PATH", list_append( L0, exeName, 0 ), VAR_SET );
+	}
+
 #endif
 
 	/*
@@ -693,7 +727,7 @@ int main( int argc, char **argv, char **arg_environ )
 		/* and add them to a variable called JAM_COMMAND_LINE_TARGETS. */
 		LIST* l = L0;
 		int n_targets = num_targets ? num_targets : 1;
-		const char** actual_targets = num_targets ? targets : &all;
+		const char** actual_targets = num_targets ? (const char**)targets : &all;
 		int i;
 
 		for ( i = 0; i < n_targets; ++i )
@@ -731,6 +765,21 @@ int main( int argc, char **argv, char **arg_environ )
 	    }
 	    globs.noexec++;
 	}
+
+#ifdef OPT_SET_JAMCOMMANDLINETARGETS_EXT
+	{
+		LIST *jamCommandLineTargets = var_get("JAM_COMMAND_LINE_TARGETS");
+		num_targets = 0;
+		if ( jamCommandLineTargets )
+		{
+			LISTITEM *item;
+			for ( item = list_first(jamCommandLineTargets); item; item = list_next(item) )
+			{
+				targets[num_targets++] = (char*)list_value(item);
+			}
+		}
+	}
+#endif
 
 	/* Now make target */
 

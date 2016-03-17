@@ -533,6 +533,10 @@ compile_rule(
  * evaluate_rule() - execute a rule invocation
  */
 
+#ifdef OPT_CLEAN_GLOBS_EXT
+extern void add_used_target_to_hash(TARGET *t);
+#endif /* OPT_CLEAN_GLOBS_EXT */
+
 LIST *
 evaluate_rule(
 	const char *rulename,
@@ -580,6 +584,29 @@ evaluate_rule(
 	}
 #endif
 
+#ifdef OPT_LOAD_MISSING_RULE_EXT
+	if( !rule->actions && !rule->procedure )
+	{
+		if( ruleexists( "FindMissingRule" ) )
+		{
+			LOL lol;
+			LIST *args = list_append( L0, expanded, 0 );
+			LIST *result;
+
+			lol_init( &lol );
+			lol_add( &lol, args );
+			result = evaluate_rule( "FindMissingRule", &lol, L0 );
+			lol_free( &lol );
+
+			if( list_first( result ) ) {
+				rule = bindrule( list_value( list_first( result ) ) );
+			}
+
+			list_free( result );
+		}
+	}
+#endif /* OPT_LOAD_MISSING_RULE_EXT */
+
 	/* Check traditional targets $(<) and sources $(>) */
 
 #ifdef OPT_IMPROVED_WARNINGS_EXT
@@ -613,6 +640,19 @@ evaluate_rule(
 	    action->targets = targetlist( (TARGETS *)0, lol_get( args, 0 ) );
 	    action->sources = targetlist( (TARGETS *)0, lol_get( args, 1 ) );
 #endif
+#ifdef OPT_USE_CHECKSUMS_EXT
+	    action->extratargets = targetlist( (TARGETS *)0, lol_get( args, 3 ), 0 );
+#endif /* OPT_USE_CHECKSUMS_EXT */
+
+#ifdef OPT_CLEAN_GLOBS_EXT
+		{
+			TARGETS* targets;
+			for ( targets = action->targets; targets; targets = targets->next ) {
+				if ( !( targets->target->flags & T_FLAG_NOTFILE ) )
+					add_used_target_to_hash( targets->target );
+			}
+		}
+#endif /* OPT_CLEAN_GLOBS_EXT */
 
 	    /* Append this action to the actions of each target */
 

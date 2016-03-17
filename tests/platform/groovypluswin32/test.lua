@@ -4,71 +4,83 @@ function Test()
 	{
 		'CreateJamVS2008Workspace.bat',
 		'CreateJamVS2008Workspace.config',
-		'Jamfile.jam',
 		'helloworld.c',
+		'jam/c/toolchain/groovyplatform.jam',
+		'Jamfile.jam',
 		'test.lua',
-		'c-compilers/c-groovycompiler.jam',
-		'c-compilers/groovyplatform-autodetect.jam',
-		'c-compilers/groovyplatform-groovycompiler-debug.jam',
-		'c-compilers/groovyplatform-groovycompiler-release.jam',
 	}
 
 	local originalDirs =
 	{
-		'c-compilers/',
+		'jam/',
+		'jam/c/',
+		'jam/c/toolchain/',
 	}
 
-	RunJam{ 'PLATFORM=groovyplatform', 'CONFIG=release', 'clean' }
+	RunJam{ 'C.TOOLCHAIN=groovyplatform/release', 'clean' }
 	TestDirectories(originalDirs)
 	TestFiles(originalFiles)
 
 	---------------------------------------------------------------------------
 	local pattern = [[
-*** found 7 target(s)...
-*** updating 2 target(s)...
-@ C.CC <helloworld>helloworld.o
-@ C.Link <helloworld>helloworld.release.exe
-*** updated 2 target(s)...
+*** found 8 target(s)...
+*** updating 3 target(s)...
+@ C.groovycompiler.CC <c/groovyplatform/release:helloworld>helloworld.o
+!NEXT!@ C.groovycompiler.Link <c/groovyplatform/release:helloworld>helloworld$(SUFEXE)
+*** updated 3 target(s)...
+]]
+	local pattern2 = [[
+!NEXT!*** found 8 target(s)...
 ]]
 
-	TestPattern(pattern, RunJam{ 'PLATFORM=groovyplatform', 'CONFIG=release' })
+	TestPattern(pattern, RunJam{ 'C.TOOLCHAIN=groovyplatform/release' })
+
+	local pass1Dirs =
+	{
+		'.build/groovyplatform-release/TOP/',
+		'.build/groovyplatform-release/TOP/helloworld/',
+		'jam/',
+		'jam/c/',
+		'jam/c/toolchain/',
+	}
 
 	local pass1Files =
 	{
 		'CreateJamVS2008Workspace.bat',
 		'CreateJamVS2008Workspace.config',
-		'Jamfile.jam',
 		'helloworld.c',
-		'helloworld.o',
-		'helloworld.release.exe',
+		'.build/groovyplatform-release/TOP/helloworld/helloworld.o',
+		'.build/groovyplatform-release/TOP/helloworld/helloworld$(SUFEXE)',
+		'jam/c/toolchain/groovyplatform.jam',
+		'Jamfile.jam',
 		'test.lua',
-		'c-compilers/c-groovycompiler.jam',
-		'c-compilers/groovyplatform-autodetect.jam',
-		'c-compilers/groovyplatform-groovycompiler-debug.jam',
-		'c-compilers/groovyplatform-groovycompiler-release.jam',
 	}
 
-	TestDirectories(originalDirs)
+	TestDirectories(pass1Dirs)
 	TestFiles(pass1Files)
 
 	---------------------------------------------------------------------------
-	local pattern2 = [[
-*** found 7 target(s)...
-]]
-	TestPattern(pattern2, RunJam{ 'PLATFORM=groovyplatform', 'CONFIG=release' })
-	TestDirectories(originalDirs)
+	TestPattern(pattern2, RunJam{ 'C.TOOLCHAIN=groovyplatform/release' })
+	TestDirectories(pass1Dirs)
 	TestFiles(pass1Files)
-
+	
 	---------------------------------------------------------------------------
-	RunJam{ 'PLATFORM=groovyplatform', 'CONFIG=release', 'clean' }
+	RunJam{ 'C.TOOLCHAIN=groovyplatform/release', 'clean' }
 	TestFiles(originalFiles)
 	TestDirectories(originalDirs)
 
 	---------------------------------------------------------------------------
 	local pattern3 = [[
-!NEXT!* No supported build platform found on this computer.
+!NEXT!* Toolchain [ badplatform ] not found!
+
+  Could not match any of the following rules:
+    -> C.Toolchain.badplatform
+    -> C.Toolchain.badplatform.*
+
 ]]
-	TestPattern(pattern3, RunJam{ 'PLATFORM=badplatform' })
+	TestPattern(pattern3, RunJam{ 'C.TOOLCHAIN=badplatform' })
 	TestDirectories(originalDirs)
 	TestFiles(originalFiles)
 end
+
+TestChecksum = Test

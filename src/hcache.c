@@ -46,7 +46,6 @@
  * large projects (eg. 3min -> 1min startup on one project.)
  *
  * External routines:
- *    hcache_init() - read and parse the local .jamdeps file.
  *    hcache_done() - write a new .jamdeps file
  *    hcache() - return list of headers on target.  Use cache or do a scan.
  *
@@ -78,6 +77,7 @@ struct hcachedata {
 	MD5SUM      contentmd5sum;
 	MD5SUM      currentcontentmd5sum;
 #endif
+	struct hcachefile	*file;
 	struct hcachedata	*next;
 } ;
 
@@ -86,11 +86,12 @@ typedef struct hcachedata HCACHEDATA ;
 typedef struct hcachefile {
 	const char		*cachename;
 	const char		*cachefilename;
-	struct hash		*hcachehash;
 	HCACHEDATA		*hcachelist;
 	int			dirty;
 	struct hcachefile	*next;
 } HCACHEFILE;
+
+struct hash *hcachehash = 0;
 
 struct hash *hcachefilehash = 0;
 HCACHEFILE *hcachefilelist = 0;
@@ -106,6 +107,10 @@ static int hits = 0;
 #else
 #define CACHE_FILE_VERSION "version 1"
 #endif
+
+#ifdef OPT_USE_CHECKSUMS_EXT
+extern int usechecksums;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 /*
  * Return the name of the header cache file.  May return NULL.
@@ -421,12 +426,13 @@ hcache_readfile(HCACHEFILE *file)
 		if( ch != '\n' )
 			goto bail;
 
-		if( !hashenter( file->hcachehash, (HASHDATA **)&c ) ) {
+		if( !hashenter( hcachehash, (HASHDATA **)&c ) ) {
 			printf( "jam: can't insert header cache item, bailing on %s\n",
 				file->cachefilename );
 			goto bail;
 		}
 
+		c->file = file;
 		c->next = 0;
 		if( last )
 			last->next = c;
@@ -483,6 +489,10 @@ static HCACHEFILE* hcachefile_get(TARGET *t)
 
 	filedata.cachename = hcachename;
 
+	if ( !hcachehash ) {
+		hcachehash = hashinit( sizeof( HCACHEDATA ), "hcache" );
+	}
+
 	if ( !hcachefilehash ) {
 		hcachefilehash = hashinit( sizeof( HCACHEFILE ), "hcachefile" );
 	}
@@ -493,7 +503,6 @@ static HCACHEFILE* hcachefile_get(TARGET *t)
 			LIST *hcachevar;
 
 			file->cachefilename = 0;
-			file->hcachehash = hashinit( sizeof( HCACHEDATA ), "hcache" );
 			file->hcachelist = 0;
 			file->next = hcachefilelist;
 			file->dirty = 0;
@@ -588,8 +597,8 @@ void hcache_done()
 	HCACHEFILE *file;
 	for( file = hcachefilelist; file; file = file->next ) {
 		hcache_writefile( file );
-		hashdone(file->hcachehash);
 	}
+	hashdone(hcachehash);
 }
 
 #ifdef OPT_BUILTIN_MD5CACHE_EXT
@@ -627,7 +636,7 @@ LIST *
 	file = hcachefile_get( t );
 	//    if ( file )
 	{
-		if( hashcheck( file->hcachehash, (HASHDATA **) &c ) )
+		if( hashcheck( hcachehash, (HASHDATA **) &c ) )
 		{
 #ifdef OPT_BUILTIN_MD5CACHE_EXT
 			if( c->time == t->time  &&  md5matchescommandline( t ) )
@@ -671,10 +680,11 @@ LIST *
 				c->hdrscan = 0;
 			}
 		} else {
-			if( hashenter( file->hcachehash, (HASHDATA **)&c ) ) {
+			if( hashenter( hcachehash, (HASHDATA **)&c ) ) {
 				c->boundname = newstr( c->boundname );
-				c->next = file->hcachelist;
-				file->hcachelist = c;
+				c->file = file;
+				c->next = c->file->hcachelist;
+				c->file->hcachelist = c;
 #ifdef OPT_BUILTIN_MD5CACHE_EXT
 				c->mtime = 0;
 				memset( &c->rulemd5sum, 0, MD5_SUMSIZE );
@@ -686,7 +696,7 @@ LIST *
 		}
 	}
 
-	file->dirty = 1;
+	c->file->dirty = 1;
 
 	/* 'c' points at the cache entry.  Its out of date. */
 
@@ -733,6 +743,7 @@ int ismd5empty( MD5SUM md5sum )
 int getcachedmd5sum( TARGET *t, int source )
 {
 	HCACHEDATA cachedata, *c = &cachedata;
+	int cachedataexists;
 	int  use_cache = 1;
 	HCACHEFILE *file;
 	const char *target = t->boundname;
@@ -741,17 +752,6 @@ int getcachedmd5sum( TARGET *t, int source )
 	char *p;
 #endif
 
-	if ( t->contentmd5sum_calculated )
-		return t->contentmd5sum_changed;
-
-	if (!source) {
-		memset(&t->buildmd5sum, 0, sizeof(t->buildmd5sum));
-		memset(&t->contentmd5sum, 0, sizeof(t->contentmd5sum));
-		t->contentmd5sum_calculated = 1;
-		t->contentmd5sum_changed = 0;
-		return t->contentmd5sum_changed;
-	}
-
 	file = hcachefile_get( t );
 
 	++queries;
@@ -759,20 +759,59 @@ int getcachedmd5sum( TARGET *t, int source )
 # ifdef DOWNSHIFT_PATHS
 	p = path;
 
-	do *p++ = (char)tolower( *target );
-	while( *target++ );
+	do *p++ = (char)tolower( *target ); while( *target++ );
 
 	target = path;
 # endif
 
 	c->boundname = target;
 
-	if( hashcheck( file->hcachehash, (HASHDATA **) &c ) )
-	{
+	cachedataexists = hashcheck( hcachehash, (HASHDATA **) &c );
+
+	if ( t->contentmd5sum_calculated ) {
+		if ( cachedataexists  &&  t->time == c->mtime ) {
+			return t->contentmd5sum_changed;
+		}
+	}
+
+	if (!source) {
+		memset(&t->buildmd5sum, 0, sizeof(t->buildmd5sum));
+		memset(&t->contentmd5sum, 0, sizeof(t->contentmd5sum));
+		t->contentmd5sum_calculated = 1;
+		t->contentmd5sum_changed = 0;
+#ifdef OPT_USE_CHECKSUMS_EXT
+		//t->contentmd5sum_calculated = 0;
+		t->buildmd5sum_calculated = 0;
+#endif /* OPT_USE_CHECKSUMS_EXT */
+		return t->contentmd5sum_changed;
+	}
+
+	if ( cachedataexists ) {
 		if ( t->time == 0 ) {
 			/* This file was generated.  Grab its timestamp. */
-			file_time( c->boundname, &c->mtime );
-		} else if( c->mtime != t->time )
+			if ( file_time( c->boundname, &c->mtime ) == -1 ) {
+				c->age = 0; /* The entry has been used, its young again */
+				++hits;
+				c->time = 0;
+				c->mtime = 0;
+				c->file->dirty = 1;
+				t->contentmd5sum_changed = 1;
+				memcpy(&t->contentmd5sum, &md5sumempty, sizeof(t->contentmd5sum));
+#ifdef OPT_BUILTIN_MD5CACHE_EXT
+				memset( &c->currentrulemd5sum, 0, MD5_SUMSIZE );
+				memset( &c->rulemd5sum, 0, MD5_SUMSIZE );
+				memset( &c->currentcontentmd5sum, 0, MD5_SUMSIZE );
+				memset( &c->contentmd5sum, 0, MD5_SUMSIZE );
+#endif /* OPT_BUILTIN_MD5CACHE_EXT */
+				t->contentmd5sum_calculated = 1;
+#ifdef OPT_USE_CHECKSUMS_EXT
+				t->contentmd5sum_file_dirty = 0;
+#endif /* OPT_USE_CHECKSUMS_EXT */
+				return t->contentmd5sum_changed;
+			}
+		}
+
+		if( c->mtime != t->time )
 			use_cache = 0;
 
 		if ( use_cache ) {
@@ -787,6 +826,11 @@ int getcachedmd5sum( TARGET *t, int source )
 			t->contentmd5sum_changed = 0;
 			memcpy(&t->contentmd5sum, &c->contentmd5sum, sizeof(t->contentmd5sum));
 			t->contentmd5sum_calculated = 1;
+#ifdef OPT_USE_CHECKSUMS_EXT
+			t->contentmd5sum_file_dirty = memcmp(c->currentcontentmd5sum, t->contentmd5sum, sizeof(MD5SUM)) != 0;
+			if (t->contentmd5sum_file_dirty)
+				t->contentmd5sum_file_dirty = memcmp(md5sumempty, &t->contentmd5sum, sizeof(t->contentmd5sum)) != 0;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 			return t->contentmd5sum_changed;
 		}
 		else {
@@ -794,17 +838,26 @@ int getcachedmd5sum( TARGET *t, int source )
 				printf( "md5 cache out of date for %s (time %d, md5time %d)\n", t->boundname , (int)t->time, (int)c->mtime );
 		}
 	} else {
-		if( hashenter( file->hcachehash, (HASHDATA **)&c ) ) {
+		if( hashenter( hcachehash, (HASHDATA **)&c ) ) {
 			c->boundname = newstr( c->boundname );
-			c->next = file->hcachelist;
-			file->hcachelist = c;
+			c->file = file;
+			c->next = c->file->hcachelist;
+			c->file->hcachelist = c;
+			c->mtime = 0;
+#ifdef OPT_BUILTIN_MD5CACHE_EXT
+			memset( &c->currentrulemd5sum, 0, MD5_SUMSIZE );
+			memset( &c->rulemd5sum, 0, MD5_SUMSIZE );
+			memset( &c->currentcontentmd5sum, 0, MD5_SUMSIZE );
+			memset( &c->contentmd5sum, 0, MD5_SUMSIZE );
+#endif /* OPT_BUILTIN_MD5CACHE_EXT */
 			c->time = 0;
 			c->includes = NULL;
 			c->hdrscan = NULL;
+			c->age = 0;
 		}
 	}
 
-	file->dirty = 1;
+	c->file->dirty = 1;
 
 	/* 'c' points at the cache entry.  Its out of date. */
 
@@ -814,7 +867,7 @@ int getcachedmd5sum( TARGET *t, int source )
 		LIST *md5callback;
 #endif
 
-		memcpy( &origmd5sum, &c->contentmd5sum, sizeof( MD5SUM ) );
+		memcpy( &origmd5sum, &t->contentmd5sum, sizeof( MD5SUM ) );
 #ifdef OPT_BUILTIN_LUA_SUPPORT_EXT
 		pushsettings( t->settings );
 		md5callback = var_get( "MD5CALLBACK" );
@@ -846,6 +899,19 @@ int getcachedmd5sum( TARGET *t, int source )
 	t->contentmd5sum_calculated = (char)(memcmp(md5sumempty, &t->contentmd5sum, sizeof(t->contentmd5sum)) != 0);
 	memset(&t->buildmd5sum, 0, sizeof(t->buildmd5sum));
 
+#ifdef OPT_USE_CHECKSUMS_EXT
+	if (usechecksums) {
+		memset(&c->rulemd5sum, 0, MD5_SUMSIZE);
+		//    t->contentmd5sum_calculated = memcmp(md5sumempty, &t->contentmd5sum, sizeof(t->contentmd5sum)) != 0;
+		t->contentmd5sum_calculated = 1;
+		if (!t->buildmd5sum_calculated)
+			memset(&t->buildmd5sum, 0, sizeof(t->buildmd5sum));
+		t->contentmd5sum_file_dirty = memcmp(c->currentcontentmd5sum, t->contentmd5sum, sizeof(MD5SUM)) != 0;
+		if (t->contentmd5sum_file_dirty)
+			t->contentmd5sum_file_dirty = memcmp(md5sumempty, &t->contentmd5sum, sizeof(t->contentmd5sum)) != 0;
+	}
+#endif /* OPT_USE_CHECKSUMS_EXT */
+
 	return t->contentmd5sum_changed;
 }
 
@@ -874,19 +940,20 @@ void setcachedmd5sum( TARGET *t )
 
 	c->boundname = target;
 
-	if( !hashcheck( file->hcachehash, (HASHDATA **) &c ) )
+	if( !hashcheck( hcachehash, (HASHDATA **) &c ) )
 	{
-		if( hashenter( file->hcachehash, (HASHDATA **)&c ) ) {
+		if( hashenter( hcachehash, (HASHDATA **)&c ) ) {
 			c->boundname = newstr( c->boundname );
-			c->next = file->hcachelist;
-			file->hcachelist = c;
+			c->file = file;
+			c->next = c->file->hcachelist;
+			c->file->hcachelist = c;
 			c->time = t->time;
 			c->includes = NULL;
 			c->hdrscan = NULL;
 		}
 	}
 
-	file->dirty = 1;
+	c->file->dirty = 1;
 
 	/* 'c' points at the cache entry.  Its out of date. */
 
@@ -1262,7 +1329,7 @@ int hcache_getrulemd5sum( TARGET *t )
 
 	c->boundname = target;
 
-	if( hashcheck( file->hcachehash, (HASHDATA **) &c ) )
+	if( hashcheck( hcachehash, (HASHDATA **) &c ) )
 	{
 		if( memcmp( &c->currentrulemd5sum, &t->rulemd5sum, MD5_SUMSIZE ) == 0 )
 			return 1;
@@ -1272,11 +1339,12 @@ int hcache_getrulemd5sum( TARGET *t )
 	else
 	{
 		// Enter it into the cache.
-		if( hashenter( file->hcachehash, (HASHDATA **)&c ) )
+		if( hashenter( hcachehash, (HASHDATA **)&c ) )
 		{
 			c->boundname = newstr( c->boundname );
-			c->next = file->hcachelist;
-			file->hcachelist = c;
+			c->file = file;
+			c->next = c->file->hcachelist;
+			c->file->hcachelist = c;
 			c->mtime = 0;
 			memcpy( &c->currentrulemd5sum, &t->rulemd5sum, MD5_SUMSIZE );
 			memset( &c->rulemd5sum, 0, MD5_SUMSIZE );
@@ -1289,7 +1357,7 @@ int hcache_getrulemd5sum( TARGET *t )
 		}
 	}
 
-	file->dirty = 1;
+	c->file->dirty = 1;
 
 	return 0;
 }
@@ -1321,10 +1389,10 @@ void hcache_finalizerulemd5sum( TARGET *t )
 
 	c->boundname = target;
 
-	if( hashcheck( file->hcachehash, (HASHDATA **) &c )  &&  memcmp( &c->rulemd5sum, &c->currentrulemd5sum, MD5_SUMSIZE ) != 0 )
+	if( hashcheck( hcachehash, (HASHDATA **) &c )  &&  memcmp( &c->rulemd5sum, &c->currentrulemd5sum, MD5_SUMSIZE ) != 0 )
 	{
 		memcpy( &c->rulemd5sum, &c->currentrulemd5sum, MD5_SUMSIZE );
-		file->dirty = 1;
+		c->file->dirty = 1;
 	}
 }
 

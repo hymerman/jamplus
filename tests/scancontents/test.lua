@@ -12,7 +12,7 @@ function Test()
 	{
 	}
 
-	os.remove('.jamcache')
+	ospath.remove('.jamcache')
 	RunJam{ 'clean' }
 	TestDirectories(originalDirs)
 	TestFiles(originalFiles)
@@ -26,8 +26,8 @@ function Test()
 	
 	if Platform == 'win32' then
 		dirs = {
-			'win32-release/',
-			'win32-release/test/',
+			'$(TOOLCHAIN_PATH)/',
+			'$(TOOLCHAIN_PATH)/test/',
 		}
 
 		noDepCacheFiles =
@@ -37,40 +37,39 @@ function Test()
 			'main.c',
 			'main.h',
 			'test.c',
-			'win32-release/test/main.obj',
-			'win32-release/test/test.obj',
-			'win32-release/test/test.release.exe',
-			'?win32-release/test/test.release.exe.intermediate.manifest',
-			'win32-release/test/test.release.pdb',
+			'$(TOOLCHAIN_PATH)/test/main.obj',
+			'$(TOOLCHAIN_PATH)/test/test.obj',
+			'$(TOOLCHAIN_PATH)/test/test.exe',
+			'?$(TOOLCHAIN_PATH)/test/test.exe.intermediate.manifest',
+			'$(TOOLCHAIN_PATH)/test/test.pdb',
 		}
 		
 		patternA = [[
 *** found 21 target(s)...
-*** updating 6 target(s)...
-@ C.vc.CC <win32!release:test>main.obj
-!NEXT!@ C.vc.Link <win32!release:test>test.exe
-!NEXT!*** updated 6 target(s)...
+*** updating 5 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.obj
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):test>test.exe
+!NEXT!*** updated 5 target(s)...
 ]]
 
 		patternB = [[
 *** found 21 target(s)...
 *** updating 3 target(s)...
-@ C.vc.CC <win32!release:test>main.obj
-!NEXT!@ C.vc.Link <win32!release:test>test.exe
-!NEXT!*** updated 3 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+*** updated 1 target(s)...
 ]]
 
 		patternC = [[
 *** found 21 target(s)...
 *** updating 3 target(s)...
-@ C.vc.CC <win32!release:test>main.obj
-!NEXT!@ C.vc.Link <win32!release:test>test.exe
-!NEXT!*** updated 3 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+*** updated 1 target(s)...
 ]]
 	else
 		dirs = {
-			'macosx32-release/',
-			'macosx32-release/test/',
+			'$(TOOLCHAIN_PATH)/',
+			'$(TOOLCHAIN_PATH)/test/',
 		}
 
 		noDepCacheFiles = {
@@ -80,53 +79,52 @@ function Test()
 			'main.h',
 			'test.c',
 			'test.lua',
-			'macosx32-release/test/main.o',
-			'macosx32-release/test/test.o',
-			'macosx32-release/test/test.release',
+			'$(TOOLCHAIN_PATH)/test/main.o',
+			'$(TOOLCHAIN_PATH)/test/test.o',
+			'$(TOOLCHAIN_PATH)/test/test',
 		}
 		
 		patternA = [[
 *** found 13 target(s)...
 *** updating 5 target(s)...
-@ C.gcc.CC <macosx32!release:test>main.o 
-@ C.gcc.CC <macosx32!release:test>test.o 
-@ C.gcc.Link <macosx32!release:test>test
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.o 
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>test.o 
+@ $(C_LINK) <$(TOOLCHAIN_GRIST):test>test
 *** updated 5 target(s)...
 ]]
 
 		patternB = [[
 *** found 13 target(s)...
 *** updating 3 target(s)...
-@ C.gcc.CC <macosx32!release:test>main.o 
-@ C.gcc.Link <macosx32!release:test>test
-*** updated 3 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+*** updated 1 target(s)...
 ]]
 
 		patternC = [[
 *** found 13 target(s)...
 *** updating 3 target(s)...
-@ C.gcc.CC <macosx32!release:test>main.o 
-@ C.gcc.Link <macosx32!release:test>test
-*** updated 3 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+*** updated 1 target(s)...
 ]]
 	end
 
 	do
-		TestPattern(patternA, RunJam{ 'NO_DEP_CACHE=1' })
+		TestPattern(patternA, RunJam{ 'JAM_NO_DEP_CACHE=1' })
 		TestDirectories(dirs)
 		TestFiles(noDepCacheFiles)
 	end
 
 	---------------------------------------------------------------------------
 	do
-		TestPattern(patternB, RunJam{ 'NO_DEP_CACHE=1' })
+		TestPattern(patternB, RunJam{ 'JAM_NO_DEP_CACHE=1' })
 		TestDirectories(dirs)
 		TestFiles(noDepCacheFiles)
 	end
 	
 	---------------------------------------------------------------------------
 	do
-		TestPattern(patternC, RunJam{ 'NO_DEP_CACHE=1' })
+		TestPattern(patternC, RunJam{ 'JAM_NO_DEP_CACHE=1' })
 		TestDirectories(dirs)
 		TestFiles(noDepCacheFiles)
 	end
@@ -152,46 +150,51 @@ function Test()
 			'main.c',
 			'main.h',
 			'test.c',
-			'win32-release/test/main.obj',
-			'win32-release/test/test.obj',
-			'win32-release/test/test.release.exe',
-			'?win32-release/test/test.release.exe.intermediate.manifest',
-			'win32-release/test/test.release.pdb',
+			'$(TOOLCHAIN_PATH)/test/main.obj',
+			'$(TOOLCHAIN_PATH)/test/test.obj',
+			'$(TOOLCHAIN_PATH)/test/test.exe',
+			'?$(TOOLCHAIN_PATH)/test/test.exe.intermediate.manifest',
+			'$(TOOLCHAIN_PATH)/test/test.pdb',
 		}
 		
 		patternA = [[
 *** found 21 target(s)...
-*** updating 6 target(s)...
-@ C.vc.CC <win32!release:test>main.obj
-!NEXT!@ C.vc.Link <win32!release:test>test.exe
-!NEXT!*** updated 6 target(s)...
+*** updating 5 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.obj
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):test>test.exe
+!NEXT!*** updated 5 target(s)...
 ]]
 
 		patternB = [[
 *** found 21 target(s)...
 *** updating 3 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
 *** updated 1 target(s)...
 ]]
 
 		patternC = [[
 *** found 21 target(s)...
 *** updating 3 target(s)...
-@ C.vc.CC <win32!release:test>main.obj
-!NEXT!@ C.vc.Link <win32!release:test>test.exe
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.obj
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):test>test.exe
 !NEXT!*** updated 3 target(s)...
 ]]
 
 		patternD = [[
 *** found 21 target(s)...
 *** updating 3 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
 *** updated 1 target(s)...
 ]]
 
 		patternE = [[
 *** found 21 target(s)...
 *** updating 3 target(s)...
-@ C.vc.CC <win32!release:test>main.obj
-!NEXT!@ C.vc.Link <win32!release:test>test.exe
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.obj
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):test>test.exe
 !NEXT!*** updated 3 target(s)...
 ]]
 
@@ -204,47 +207,72 @@ function Test()
 			'main.h',
 			'test.c',
 			'test.lua',
-			'macosx32-release/test/main.o',
-			'macosx32-release/test/test.o',
-			'macosx32-release/test/test.release',
+			'$(TOOLCHAIN_PATH)/test/main.o',
+			'$(TOOLCHAIN_PATH)/test/test.o',
+			'$(TOOLCHAIN_PATH)/test/test',
 		}
 		
 		patternA = [[
 *** found 13 target(s)...
 *** updating 5 target(s)...
-@ C.gcc.CC <macosx32!release:test>main.o 
-@ C.gcc.CC <macosx32!release:test>test.o 
-@ C.gcc.Link <macosx32!release:test>test
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.o 
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>test.o 
+@ $(C_LINK) <$(TOOLCHAIN_GRIST):test>test
 *** updated 5 target(s)...
 ]]
 
 		patternB = [[
 *** found 13 target(s)...
 *** updating 3 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
 *** updated 1 target(s)...
 ]]
 
-		patternC = [[
+		if useChecksums then
+			patternC = [[
 *** found 13 target(s)...
 *** updating 3 target(s)...
-@ C.gcc.CC <macosx32!release:test>main.o 
-@ C.gcc.Link <macosx32!release:test>test
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.o 
+*** updated 2 target(s)...
+]]
+		else
+			patternC = [[
+*** found 13 target(s)...
+*** updating 3 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.o 
+@ $(C_LINK) <$(TOOLCHAIN_GRIST):test>test
 *** updated 3 target(s)...
 ]]
+		end
 
 		patternD = [[
 *** found 13 target(s)...
 *** updating 3 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
 *** updated 1 target(s)...
 ]]
 
-		patternE = [[
+		if useChecksums then
+			patternE = [[
 *** found 13 target(s)...
 *** updating 3 target(s)...
-@ C.gcc.CC <macosx32!release:test>main.o 
-@ C.gcc.Link <macosx32!release:test>test
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.o 
+*** updated 2 target(s)...
+]]
+		else
+			patternE = [[
+*** found 13 target(s)...
+*** updating 3 target(s)...
+@ WriteFile <$(TOOLCHAIN_GRIST):test>generated.h
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.o 
+@ $(C_LINK) <$(TOOLCHAIN_GRIST):test>test
 *** updated 3 target(s)...
 ]]
+		end
 	end
 
 	do
@@ -262,6 +290,7 @@ function Test()
 
 	---------------------------------------------------------------------------
 	do
+		osprocess.sleep(1.0)
 		TestPattern(patternC, RunJam{ 'GENERATED_VERSION=v3' })
 		TestDirectories(dirs)
 		TestFiles(depCacheFiles)
@@ -276,14 +305,17 @@ function Test()
 
 	---------------------------------------------------------------------------
 	do
+		osprocess.sleep(1.0)
 		TestPattern(patternE, RunJam{})
 		TestDirectories(dirs)
 		TestFiles(depCacheFiles)
 	end
 
 	---------------------------------------------------------------------------
-	os.remove('.jamcache')
+	ospath.remove('.jamcache')
 	RunJam{ 'clean' }
 	TestFiles(originalFiles)
 	TestDirectories(originalDirs)
 end
+
+TestChecksum = Test

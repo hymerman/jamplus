@@ -43,8 +43,8 @@ function Test()
 ]]
 	TestPattern(pattern2, RunJam())
 	
-	os.sleep(1.0)
-	os.touch('simple.fx')
+	osprocess.sleep(1.0)
+	ospath.touch('simple.fx')
 	TestPattern(pattern, RunJam())
 
 	RunJam{ 'clean' }
@@ -52,3 +52,4 @@ function Test()
 	TestFiles(originalFiles)
 end
 
+TestChecksum = Test

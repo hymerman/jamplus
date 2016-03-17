@@ -76,6 +76,10 @@
 #ifdef OPT_BUILTIN_LUA_SUPPORT_EXT
 # include "luasupport.h"
 #endif
+#ifdef OPT_USE_CHECKSUMS_EXT
+#include "headers.h"
+#include "timestamp.h"
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 static void make1a( TARGET *t, TARGET *parent );
 static void make1b( TARGET *t );
@@ -107,6 +111,10 @@ static int verifyIsRealOutput (char *input, int len);
 static void printResponseFiles(CMD *cmd);
 #endif
 
+#ifdef OPT_USE_CHECKSUMS_EXT
+void make1d_checksum_update( TARGET *t );
+#endif
+
 #ifdef OPT_MULTIPASS_EXT
 extern LIST *queuedjamfiles;
 #endif
@@ -131,6 +139,10 @@ void write_string( FILE *f, const char *s );
 #ifdef OPT_MULTIPASS_EXT
 extern int actionpass;
 #endif
+
+#ifdef OPT_USE_CHECKSUMS_EXT
+extern int usechecksums;
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 /*
  * make1() - execute commands to update a TARGET and all its dependents
@@ -287,19 +299,19 @@ make1b( TARGET *t )
 
 #ifdef OPT_DEBUG_MAKE1_LOG_EXT
 	if (DEBUG_MAKE1) {
-	    printf( "make1b\t--\t%s (asynccnt %d)\n" ,
-		    t->name, t->asynccnt);
+		printf( "make1b\t--\t%s (asynccnt %d)\n" ,
+			t->name, t->asynccnt);
 	}
 #endif
 	/* If any dependents are still outstanding, wait until they */
 	/* call make1b() to signal their completion. */
 
 	if( --t->asynccnt )
-	    return;
+		return;
 
 #ifdef OPT_INTERRUPT_FIX
 	if( intr )
-	    return;
+		return;
 #endif
 
 	failed = "dependents";
@@ -315,18 +327,18 @@ make1b( TARGET *t )
 #ifdef OPT_SEMAPHORE
 	if( t->semaphore && t->semaphore->asynccnt )
 	{
-	    /* We can't launch yet.  Try again when the semaphore is free */
+		/* We can't launch yet.  Try again when the semaphore is free */
 #ifdef OPT_BUILTIN_NEEDS_EXT
-	    t->semaphore->parents = targetentry( t->semaphore->parents, t, 0 );
+		t->semaphore->parents = targetentry( t->semaphore->parents, t, 0 );
 #else
-	    t->semaphore->parents = targetentry( t->semaphore->parents, t );
+		t->semaphore->parents = targetentry( t->semaphore->parents, t );
 #endif
-	    t->asynccnt++;
+		t->asynccnt++;
 
-	    if( DEBUG_EXECCMD )
-		printf( "SEM: %s is busy, delaying launch of %s\n",
-			t->semaphore->name, t->name);
-	    return;
+		if( DEBUG_EXECCMD )
+			printf( "SEM: %s is busy, delaying launch of %s\n",
+				t->semaphore->name, t->name);
+		return;
 	}
 #endif
 	/* Now ready to build target 't'... if dependents built ok. */
@@ -338,81 +350,123 @@ make1b( TARGET *t )
 //			printf("warning: Trying to build '%s' before dependent '%s' is done!\n", t->name, c->target->name);
 		}
 #ifdef OPT_BUILTIN_NEEDS_EXT
-	    /* Only test a target's MightNotUpdate flag if the target's build was successful. */
-	    if( c->target->status == EXEC_CMD_OK ) {
-		if ( c->target->flags & T_FLAG_MIGHTNOTUPDATE ) {
-		    time_t timestamp;
+		/* Only test a target's MightNotUpdate flag if the target's build was successful. */
+		if( c->target->status == EXEC_CMD_OK ) {
+#ifdef OPT_USE_CHECKSUMS_EXT
+			if ((c->target->fate == T_FATE_OUTDATED  ||  c->target->fate == T_FATE_UPDATE)  &&  (usechecksums  ||  (c->target->flags & T_FLAG_SCANCONTENTS))  &&  !(c->target->flags & (T_FLAG_NOUPDATE | T_FLAG_NOTFILE))) {
+				getcachedmd5sum( c->target, 1 );
+				make1d_checksum_update(c->target);
+			}
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
-		    /* Mark that we've seen a MightNotUpdate flag in this set of children. */
-		    childmightnotupdate = 1;
+			/* Skip checking MightNotUpdate children if the target is bound to a missing file, */
+			/* as in this case it should be built anyway */
+			if ( c->target->flags & T_FLAG_MIGHTNOTUPDATE && t->binding != T_BIND_MISSING ) {
+				time_t timestamp;
 
-		    /* Grab the generated target's timestamp. */
-		    if ( file_time( c->target->boundname, &timestamp ) == 0 ) {
-			/* If the child's timestamp is greater that the target's timestamp, then it updated. */
-				if ( timestamp > t->time ) {
+				/* Mark that we've seen a MightNotUpdate flag in this set of children. */
+				childmightnotupdate = 1;
+
+				/* Grab the generated target's timestamp. */
+				if ( file_time( c->target->boundname, &timestamp ) == 0 ) {
+					/* If the child's timestamp is greater that the target's timestamp, then it updated. */
+#ifdef OPT_USE_CHECKSUMS_EXT
+					if ( usechecksums ? c->target->contentmd5sum_file_dirty : timestamp > t->time) {
+						if ( usechecksums || ( c->target->flags & T_FLAG_SCANCONTENTS ) ) {
+#else
+					if ( timestamp > t->time ) {
+						if ( c->target->flags & T_FLAG_SCANCONTENTS ) {
+#endif /* OPT_USE_CHECKSUMS_EXT */
+							childscancontents = 1;
+							if ( getcachedmd5sum( c->target, 1 ) ) {
+								childupdated = 1;
+							}
+						} else {
+							childupdated = 1;
+						}
+					} else {
+						childscancontents = 1;
+					}
+				}
+			}
+			/* If it didn't have the MightNotUpdate flag but did update, mark it. */
+			else if ( c->target->fate > T_FATE_STABLE  &&  !c->needs ) {
+#ifdef OPT_USE_CHECKSUMS_EXT
+				if ( usechecksums ) {
+					if ( c->target->actions ) {
+						//childscancontents = 1;
+						if ( !( c->target->flags & ( T_FLAG_NOTFILE | T_FLAG_NOUPDATE ) ) ) {
+							if ( getcachedmd5sum( c->target, 1 ) ) {
+								childupdated = 1;
+							}
+						}
+					} else {
+						if ( c->target->includes ) {
+							if ( c->target->includes->fate > T_FATE_STABLE ) {
+								childupdated = 1;
+							}
+							if ( c->target->fate == T_FATE_UPDATE ) {
+								childupdated = 1;
+							}
+						} else {
+							childupdated = 1;
+						}
+					}
+				} else
+#endif /* OPT_USE_CHECKSUMS_EXT */
+				{
 					if ( c->target->flags & T_FLAG_SCANCONTENTS ) {
 						childscancontents = 1;
 						if ( getcachedmd5sum( c->target, 1 ) )
 							childupdated = 1;
-					} else
+					} else {
 						childupdated = 1;
-				} else {
-					childscancontents = 1;
-				}
-		    }
-		}
-		/* If it didn't have the MightNotUpdate flag but did update, mark it. */
-		else if ( c->target->fate > T_FATE_STABLE  &&  !c->needs ) {
-			if ( c->target->flags & T_FLAG_SCANCONTENTS ) {
-				childscancontents = 1;
-				if ( getcachedmd5sum( c->target, 1 ) )
-					childupdated = 1;
-			} else
-				childupdated = 1;
-		}
-	    }
-#endif
-
-	    if( c->target->status > t->status )
-	{
-	    failed = c->target->name;
-	    t->status = c->target->status;
-#ifdef OPT_MULTIPASS_EXT
-		if ( ( c->target->fate == T_FATE_MISSING  &&  ! ( c->target->flags & T_FLAG_NOCARE )  &&  !c->target->actions ) || t->status == EXEC_CMD_NEXTPASS )
-		{
-			missing = 1;
-			if ( queuedjamfiles )
-			{
-				ACTIONS *actions;
-
-				t->status = EXEC_CMD_NEXTPASS;
-
-				for( actions = t->actions; actions; actions = actions->next )
-				{
-					actions->action->pass++;
+					}
 				}
 			}
 		}
 #endif
-	}
+
+		if( c->target->status > t->status )
+		{
+			failed = c->target->name;
+			t->status = c->target->status;
+#ifdef OPT_MULTIPASS_EXT
+			if ( ( c->target->fate == T_FATE_MISSING  &&  ! ( c->target->flags & T_FLAG_NOCARE )  &&  !c->target->actions ) || t->status == EXEC_CMD_NEXTPASS )
+			{
+				missing = 1;
+				if ( queuedjamfiles )
+				{
+					ACTIONS *actions;
+
+					t->status = EXEC_CMD_NEXTPASS;
+
+					for( actions = t->actions; actions; actions = actions->next )
+					{
+						actions->action->pass = actionpass + 1;
+					}
+				}
+			}
+#endif
+		}
 
 #ifdef OPT_NOCARE_NODES_EXT
-	/* CWM */
-	/* If actions on deps have failed, but if this is a 'nocare' target */
-	/* then continue anyway. */
+		/* CWM */
+		/* If actions on deps have failed, but if this is a 'nocare' target */
+		/* then continue anyway. */
 
-	if( ( t->flags & T_FLAG_NOCARE ) && t->status == EXEC_CMD_FAIL )
-	{
-		printf( "...dependency on %s failed, but don't care...\n", t->name );
-		t->status = EXEC_CMD_OK;
-	}
+		if( ( t->flags & T_FLAG_NOCARE ) && t->status == EXEC_CMD_FAIL )
+		{
+			printf( "...dependency on %s failed, but don't care...\n", t->name );
+			t->status = EXEC_CMD_OK;
+		}
 #endif
 	}
 
 #ifdef OPT_BUILTIN_NEEDS_EXT
 	/* If we found a MightNotUpdate flag and there was an update, mark the fate as updated. */
 	if ( childmightnotupdate  &&  childupdated  &&  t->fate == T_FATE_STABLE )
-	      t->fate = T_FATE_UPDATE;
+		t->fate = T_FATE_UPDATE;
 	if ( childscancontents ) {
 		if ( !childupdated ) {
 			if ( t->includes ) {
@@ -436,18 +490,42 @@ make1b( TARGET *t )
 		} else if ( t->fate == T_FATE_STABLE )
 			t->fate = T_FATE_UPDATE;
 	}
-	if ( t->fate == T_FATE_UPDATE  &&  !childupdated  &&  t->status != EXEC_CMD_NEXTPASS )
-		if ( md5matchescommandline( t ) )
-		    t->fate = T_FATE_STABLE;
+
+//	if ( childupdated  &&  t->fate == T_FATE_STABLE )
+//		t->fate = T_FATE_UPDATE;
+//	if ( ( t->fate == T_FATE_UPDATE  ||  t->fate == T_FATE_OUTDATED )  &&  !childupdated  &&  t->status != EXEC_CMD_NEXTPASS )
+#ifdef OPT_USE_CHECKSUMS_EXT
+	if (usechecksums) {
+		//if ( !( t->flags & T_FLAG_NOTFILE )  &&  t->fate == T_FATE_UPDATE  &&  !childupdated  &&  t->status != EXEC_CMD_NEXTPASS )
+		//if ( ( t->fate == T_FATE_UPDATE  ||  t->fate == T_FATE_OUTDATED )  &&  !childupdated  &&  t->status != EXEC_CMD_NEXTPASS )
+		if ( t->binding != T_BIND_MISSING  &&  t->fate == T_FATE_UPDATE  &&  !childupdated  &&  t->status != EXEC_CMD_NEXTPASS )
+			if ( md5matchescommandline( t ) )
+				t->fate = T_FATE_STABLE;
+	} else {
+#endif /* OPT_USE_CHECKSUMS_EXT */
+		if ( t->binding != T_BIND_MISSING  &&  ( t->fate == T_FATE_UPDATE  ||  t->fate == T_FATE_OUTDATED )  &&  ( !childupdated  &&  ( t->depends != NULL  ||  t->includes != NULL ) )  &&  t->status != EXEC_CMD_NEXTPASS ) {
+			if ( t->flags & T_FLAG_SCANCONTENTS ) {
+				if ( md5matchescommandline( t ) ) {
+					t->fate = T_FATE_STABLE;
+				}
+			} else {
+				if ( md5matchescommandline( t ) ) {
+					t->fate = T_FATE_STABLE;
+				}
+			}
+		}
+#ifdef OPT_USE_CHECKSUMS_EXT
+	}
+#endif /* OPT_USE_CHECKSUMS_EXT */
 	if ( t->flags & ( T_FLAG_MIGHTNOTUPDATE | T_FLAG_SCANCONTENTS )  &&  t->actions ) {
 #ifdef OPT_ACTIONS_WAIT_FIX
-	    /* See http://maillist.perforce.com/pipermail/jamming/2003-December/002252.html */
-	    /* Determine if an action is already running on behalf of another target, and if so, */
-	    /* bail out of make1b() prior to calling make1cmds() by adding more parents to the */
-	    /* in-progress target and incrementing the asynccnt of the new target. */
-	    make1wait( t );
-	    if ( t->asynccnt != 0 )
-		return;
+		/* See http://maillist.perforce.com/pipermail/jamming/2003-December/002252.html */
+		/* Determine if an action is already running on behalf of another target, and if so, */
+		/* bail out of make1b() prior to calling make1cmds() by adding more parents to the */
+		/* in-progress target and incrementing the asynccnt of the new target. */
+		make1wait( t );
+		if ( t->asynccnt != 0 )
+			return;
 #endif
 	}
 #endif
@@ -461,112 +539,114 @@ make1b( TARGET *t )
 	if( t->status == EXEC_CMD_FAIL && t->actions )
 #endif
 	{
-	    ++counts->skipped;
-	    printf( "*** skipped %s for lack of %s...\n", t->name, failed );
+		++counts->skipped;
+		printf( "*** skipped %s for lack of %s...\n", t->name, failed );
 	}
 
 	if( t->status == EXEC_CMD_OK )
-	    switch( t->fate )
 	{
-	case T_FATE_INIT:
-	case T_FATE_MAKING:
-	    /* shouldn't happen */
+		switch( t->fate )
+		{
+			case T_FATE_INIT:
+			case T_FATE_MAKING:
+				/* shouldn't happen */
 
-	case T_FATE_STABLE:
-	case T_FATE_NEWER:
-	    break;
+			case T_FATE_STABLE:
+			case T_FATE_NEWER:
+				break;
 
-	case T_FATE_CANTFIND:
-	case T_FATE_CANTMAKE:
-	    t->status = EXEC_CMD_FAIL;
-	    break;
+			case T_FATE_CANTFIND:
+			case T_FATE_CANTMAKE:
+				t->status = EXEC_CMD_FAIL;
+				break;
 
-	case T_FATE_ISTMP:
-	    if( DEBUG_MAKEQ )
-		printf( "*** using %s...\n", t->name );
-	    break;
+			case T_FATE_ISTMP:
+				if( DEBUG_MAKEQ )
+				printf( "*** using %s...\n", t->name );
+				break;
 
-	case T_FATE_TOUCHED:
-	case T_FATE_MISSING:
-	case T_FATE_NEEDTMP:
-	case T_FATE_OUTDATED:
-	case T_FATE_UPDATE:
-	    /* Set "on target" vars, build actions, unset vars */
-	    /* Set "progress" so that make1c() counts this target among */
-	    /* the successes/failures. */
+			case T_FATE_TOUCHED:
+			case T_FATE_MISSING:
+			case T_FATE_NEEDTMP:
+			case T_FATE_OUTDATED:
+			case T_FATE_UPDATE:
+				/* Set "on target" vars, build actions, unset vars */
+				/* Set "progress" so that make1c() counts this target among */
+				/* the successes/failures. */
 
 #ifdef OPT_DEBUG_MAKE1_LOG_EXT
-	    if (DEBUG_MAKE1) {
-		printf( "make1b\t--\t%s (has actions)\n" , t->name );
-	    }
+			if (DEBUG_MAKE1) {
+				printf( "make1b\t--\t%s (has actions)\n" , t->name );
+			}
 #endif
-	    if( t->actions )
-	    {
+			if( t->actions )
+			{
 #ifdef OPT_ACTIONS_WAIT_FIX
-		/* See http://maillist.perforce.com/pipermail/jamming/2003-December/002252.html */
-		/* Determine if an action is already running on behalf of another target, and if so, */
-		/* bail out of make1b() prior to calling make1cmds() by adding more parents to the */
-		/* in-progress target and incrementing the asynccnt of the new target. */
-		make1wait( t );
-		if ( t->asynccnt != 0 )
-		    return;
+				/* See http://maillist.perforce.com/pipermail/jamming/2003-December/002252.html */
+				/* Determine if an action is already running on behalf of another target, and if so, */
+				/* bail out of make1b() prior to calling make1cmds() by adding more parents to the */
+				/* in-progress target and incrementing the asynccnt of the new target. */
+				make1wait( t );
+				if ( t->asynccnt != 0 )
+					return;
 #endif
-		++counts->total;
+				++counts->total;
 
 #ifndef OPT_IMPROVED_PROGRESS_EXT
-		if( DEBUG_MAKE && !( counts->total % 100 ) )
-		    printf( "*** on %dth target...\n", counts->total );
+				if( DEBUG_MAKE && !( counts->total % 100 ) )
+					printf( "*** on %dth target...\n", counts->total );
 #else
-		{
-		    double est_remaining;
+				{
+					double est_remaining;
 
-		    est_remaining =
-			progress_update(globs.progress, counts->total);
+					est_remaining =
+					progress_update(globs.progress, counts->total);
 
-		    if (est_remaining > 0) {
-			int minutes = (int)est_remaining / 60;
-			int seconds = (int)est_remaining % 60;
+					if (est_remaining > 0) {
+						int minutes = (int)est_remaining / 60;
+						int seconds = (int)est_remaining % 60;
 
-			if (minutes > 0 || seconds > 0) {
-			    printf("*** completed %.0f%% (",
-				   ((double)counts->total * 100 /
-				    globs.updating));
-			    if (minutes > 0)
-				printf("%d min ", minutes);
-			    if (seconds >= 0)
-				printf("%d sec ", seconds);
-			    printf("remaining)...\n");
-			}
-		    }
-		}
+						if (minutes > 0 || seconds > 0) {
+							printf("*** completed %.0f%% (",
+							   ((double)counts->total * 100 /
+								globs.updating));
+							if (minutes > 0)
+							printf("%d min ", minutes);
+							if (seconds >= 0)
+							printf("%d sec ", seconds);
+							printf("remaining)...\n");
+						}
+					}
+				}
 #endif
 
 #ifdef OPT_BUILTIN_MD5CACHE_EXT
-		pushsettings( t->settings );
-		filecache_fillvalues( t );
-		popsettings( t->settings );
-		t->cmds = (char *)make1cmds( t, t->actions );
+				pushsettings( t->settings );
+				filecache_fillvalues( t );
+				popsettings( t->settings );
+				t->cmds = (char *)make1cmds( t, t->actions );
 #else
-		pushsettings( t->settings );
-		t->cmds = (char *)make1cmds( t->actions );
-		popsettings( t->settings );
+				pushsettings( t->settings );
+				t->cmds = (char *)make1cmds( t->actions );
+				popsettings( t->settings );
 #endif
 
-		t->progress = T_MAKE_RUNNING;
-	    }
+				t->progress = T_MAKE_RUNNING;
+			}
 
-	    break;
+			break;
+		}
 	}
 
 #ifdef OPT_SEMAPHORE
 	/* If there is a semaphore, indicate that its in use */
 	if( t->semaphore )
 	{
-	    ++(t->semaphore->asynccnt);
+		++(t->semaphore->asynccnt);
 
-	    if( DEBUG_EXECCMD )
-		printf( "SEM: %s now used by %s\n", t->semaphore->name,
-		       t->name );
+		if( DEBUG_EXECCMD )
+			printf( "SEM: %s now used by %s\n", t->semaphore->name,
+				   t->name );
 	}
 #endif
 	/* Call make1c() to begin the execution of the chain of commands */
@@ -650,7 +730,24 @@ make1c( TARGET *t )
 #ifdef OPT_BUILTIN_LUA_SUPPORT_EXT
 	    if ( cmd->rule->flags & RULE_LUA )
 	    {
-		execlua( cmd->luastring, make1d, t );
+            int i;
+            LOL boundargs;
+            lol_init(&boundargs);
+            for (i = 0; i < cmd->args.count; ++i)
+            {
+                LIST* list = lol_get(&cmd->args, i);
+                LIST* newlist = L0;
+                LISTITEM *l2;
+                int index = 0;
+                for (l2 = list_first(list); l2; l2 = list_next(l2))
+                {
+                    TARGET* t = bindtarget(list_value(l2));
+                    newlist = list_append(newlist, t->boundname, 0);
+                }
+                lol_add(&boundargs, newlist);
+            }
+            execlua( cmd->luastring, &boundargs, make1d, t );
+            lol_free(&boundargs);
 	    }
 	    else
 #endif
@@ -859,7 +956,7 @@ make1d(
 #endif
 #ifdef OPT_DEBUG_MAKE_PRINT_TARGET_NAME
 		if (globs.printtarget) {
-		    printf("%s ", t->name);
+		    printf("%s ", cmd->targetsunbound ? list_value( list_first( cmd->targetsunbound ) ) : t->name);
 		} else {
 		    list_print( lol_get( &cmd->args, 0 ) );
 		}
@@ -1062,11 +1159,25 @@ make1d(
 		LISTITEM* target;
 	    LIST *targets = lol_get( &cmd->args, 0 );
 
-	    for(target = list_first(targets) ; target; target = list_next( target ) )
-	    {
-		TARGET *t = bindtarget( list_value(target) );
-		filecache_update( t );
-	    }
+		for (target = list_first(targets); target; target = list_next(target))
+		{
+			TARGET *t = bindtarget(list_value(target));
+			if (!(t->flags & (T_FLAG_NOUPDATE | T_FLAG_NOTFILE))) {
+				filecache_update(t);
+			}
+		}
+
+#ifdef OPT_USE_CHECKSUMS_EXT
+		for (target = list_first(cmd->targetsunbound); target; target = list_next(target)) {
+			TARGET *t = bindtarget(list_value(target));
+			if ((usechecksums  ||  (t->flags & T_FLAG_SCANCONTENTS))  &&  !(t->flags & (T_FLAG_NOUPDATE | T_FLAG_NOTFILE))) {
+				t->flags &= ~T_FLAG_CHECKSUM_VISITED;
+				t->time = 0;
+				getcachedmd5sum( t, 1 );
+				file_time( t->boundname, &t->time );
+			}
+		}
+#endif /* OPT_USE_CHECKSUMS_EXT */
 	}
 #endif
 
@@ -1079,6 +1190,96 @@ make1d(
 
 	make1c( t );
 }
+
+
+#ifdef OPT_USE_CHECKSUMS_EXT
+
+/*
+  make1d_checksum_update() - Update a target's dependency chain when the target has
+    been updated and has a HDRRULE applied. This handles 'appearing' dependency chains
+    for generated files and HDRRULE and checksum support.
+
+  In the case of a generated file being part of a HDRRULE chain, it is
+    necessary to discover the checksums of the dependencies after the generated
+    file has been written in order to have a proper no-op build for the next
+    Jam invocation.
+
+  Take the case of generated.c including nongenerated.h which includes generated.h.
+    Where generated.c did not exist when Jam was collecting HDRRULE dependencies,
+    nongenerated.h and generated.h are not known dependencies of generated.c.
+
+    generated.c -> nongenerated.h -> generated.h
+
+  In a timestamp-based Jam build, this is not a problem, as nongenerated.h and
+    generated.h will both have timestamps earlier than the resultant generated.obj.
+
+  For a checksum-based build, things are different. Without a call to
+    make1d_checksum_update(), the depcache database will store no information
+    about nongenerated.h and generated.h during the first run of Jam. For the
+    second run of Jam, generated.c, already on the disk, will have its HDRRULE
+    applied and nongenerated.h will be discovered. 'nongenerated.h' did not
+    exist in the database before, so JamPlus assumes the file is new, and the
+    build is treated as if the timestamp for nongenerated.h is newer than
+    generated.obj. Of course, nongenerated.h already existed on the disk, but
+    since the build could not infer that, there was no other safe option than
+    to cause the build to occur. That is why the second run of Jam results in
+    an apparent rebuild of generated.obj. The third run of Jam is a no-op, because
+    the database now contains information about nongenerated.h and generated.h
+    and knows they didn't change.
+
+  With a call to make1d_checksum_update() on the target that was just generated,
+    generated.c, a header scan occurs and discovers nongenerated.h needs to
+    be looked at more closely. Its timestamp, checksum, and even scanned headers
+    (which include generated.h) are inserted into the database. Upon running
+    Jam for a second time, nongenerated.h is discovered in the database and is
+    without change, so no build occurs, just as it should.
+*/
+void make1d_checksum_update( TARGET *t ) {
+	TARGETS	*c;
+
+	if ( t->flags & T_FLAG_CHECKSUM_VISITED ) {
+		return;
+	}
+	t->flags |= T_FLAG_CHECKSUM_VISITED;
+
+	if( !( t->flags & T_FLAG_NOTFILE ) ) {
+		/* Under the influence of "on target" variables, bind the target and search for headers. */
+		SETTINGS *s = copysettings( t->settings );
+		pushsettings( s );
+
+		if ( t->binding == T_BIND_UNBOUND ) {
+			t->boundname = search( t->name, &t->time );
+		}
+
+		if ( !( t->flags & ( T_FLAG_NOUPDATE | T_FLAG_NOTFILE ) ) ) {
+			getcachedmd5sum(t, 1);
+		}
+
+		if ( t->time == 0 ) {
+			file_time( t->boundname, &t->time );
+		}
+		t->binding = t->time ? T_BIND_EXISTS : T_BIND_MISSING;
+
+		//if ( t->contentmd5sum_changed ) {
+			headers( t );
+		//}
+
+		popsettings( s );
+		freesettings( s );
+	}
+
+	for( c = t->depends; c; c = c->next )
+	{
+		int internal = t->flags & T_FLAG_INTERNAL;
+
+		make1d_checksum_update( c->target );
+	}
+
+	if( t->includes )
+	    make1d_checksum_update( t->includes );
+}
+
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 /*
  * make1cmds() - turn ACTIONS into CMDs, grouping, splitting, etc
@@ -1123,6 +1324,7 @@ make1cmds( ACTIONS *a0 )
 	    RULE    *rule = a0->action->rule;
 	    SETTINGS *boundvars;
 	    LIST    *nt, *ns;
+	    LIST    *ntunbound, *nsunbound;
 	    ACTIONS *a1;
 	    int	    start, chunk, length, maxline;
 		TARGETS *autosettingsreverse = 0;
@@ -1157,6 +1359,17 @@ make1cmds( ACTIONS *a0 )
 			}
 		}
 #endif
+
+#ifdef OPT_USE_CHECKSUMS_EXT
+		if (usechecksums) {
+			for (a1 = a0; a1; a1 = a1->next) {
+				TARGETS* targets;
+				for (targets = a1->action->targets; targets; targets = targets->next) {
+					targets->target->contentmd5sum_calculated = 0;
+				}
+			}
+		}
+#endif /* OPT_USE_CHECKSUMS_EXT */
 
 		for ( autot = a0->action->autosettings; autot; autot = autot->next ) {
 			if ( autot->target != t )
@@ -1195,6 +1408,8 @@ make1cmds( ACTIONS *a0 )
 
 		nt = L0;
 		ns = L0;
+		ntunbound = L0;
+		nsunbound = L0;
 
 		if ( strncmp( rule->name, "batched_", 8 ) == 0 )
 		{
@@ -1239,6 +1454,14 @@ make1cmds( ACTIONS *a0 )
 					/* try to get it from the cache */
 					if (copyfile(t->boundname, cachedname, NULL)) {
 					    printf( "Using cached %s\n", t->name );
+
+#ifdef OPT_USE_CHECKSUMS_EXT
+						if (usechecksums) {
+							file_time( t->boundname, &t->time );
+							t->contentmd5sum_calculated = 0;
+							getcachedmd5sum( t, 1 );
+						}
+#endif /* OPT_USE_CHECKSUMS_EXT */
 					    continue;
 					} else {
 					    printf( "Cannot retrieve %s from cache (will build normally)\n", t->name );
@@ -1260,7 +1483,9 @@ make1cmds( ACTIONS *a0 )
 
 		    if ( !anycacheable ) {
 			nt = make1list( L0, a0->action->targets, 0 );
+			ntunbound = make1list_unbound( L0, a0->action->targets, 0 );
 			ns = make1list( L0, a0->action->sources, rule->flags );
+			nsunbound = make1list_unbound( L0, a0->action->sources, rule->flags );
 		    }
 		}
 		else
@@ -1371,7 +1596,9 @@ make1cmds( ACTIONS *a0 )
 
 		    if ( !allcached ) {
 			nt = make1list( L0, a0->action->targets, 0 );
+			ntunbound = make1list_unbound( L0, a0->action->targets, 0 );
 			ns = make1list( L0, a0->action->sources, rule->flags );
+			nsunbound = make1list_unbound( L0, a0->action->sources, rule->flags );
 		    }
 		}
 		list_free( targets );
@@ -1444,7 +1671,19 @@ make1cmds( ACTIONS *a0 )
 		} else {
 #endif
 			nt = make1list( L0, a0->action->targets, 0 );
+			ntunbound = make1list_unbound( L0, a0->action->targets, 0 );
+#ifdef OPT_USE_CHECKSUMS_EXT
+			if (usechecksums) {
+				ns = make1list( L0, a0->action->sources, t->binding == T_BIND_MISSING ? ( rule->flags & ~RULE_UPDATED ) : rule->flags );
+				nsunbound = make1list_unbound( L0, a0->action->sources, t->binding == T_BIND_MISSING ? ( rule->flags & ~RULE_UPDATED ) : rule->flags );
+			} else {
+#endif /* OPT_USE_CHECKSUMS_EXT */
 			ns = make1list( L0, a0->action->sources, rule->flags );
+			nsunbound = make1list_unbound( L0, a0->action->sources, rule->flags );
+#ifdef OPT_USE_CHECKSUMS_EXT
+			}
+#endif /* OPT_USE_CHECKSUMS_EXT */
+
 #if 0
 	    }
 #endif
@@ -1452,6 +1691,8 @@ make1cmds( ACTIONS *a0 )
 #else
 	    nt = make1list( L0, a0->action->targets, 0 );
 	    ns = make1list( L0, a0->action->sources, rule->flags );
+	    ntunbound = make1list_unbound( L0, a0->action->targets, 0 );
+	    nsunbound = make1list_unbound( L0, a0->action->sources, rule->flags );
 #endif
 
 	    if( rule->flags & RULE_TOGETHER )
@@ -1463,6 +1704,7 @@ make1cmds( ACTIONS *a0 )
 #endif
 	    {
 		ns = make1list( ns, a1->action->sources, rule->flags );
+		nsunbound = make1list_unbound( ns, a1->action->sources, rule->flags );
 		a1->action->running = 1;
 #ifdef OPT_ACTIONS_WAIT_FIX
 		a1->action->run_tgt = t;
@@ -1536,6 +1778,15 @@ make1cmds( ACTIONS *a0 )
 	    maxline = maxline && maxline < MAXLINE ? maxline : MAXLINE;
 #endif
 
+#ifdef OPT_USE_CHECKSUMS_EXT
+		{
+			TARGETS* extratarget;
+			for ( extratarget = a0->action->extratargets; extratarget; extratarget = extratarget->next ) {
+				ntunbound = list_append( ntunbound, extratarget->target->name, 1 );
+			}
+		}
+#endif /* OPT_USE_CHECKSUMS_EXT */
+
 	    do
 	    {
 		/* Build cmd: cmd_new consumes its lists. */
@@ -1545,6 +1796,8 @@ make1cmds( ACTIONS *a0 )
 		CMD *cmd = cmd_new( rule,
 			list_copy( L0, nt ),
 			list_sublist( ns, start, thischunk ),
+			list_copy( L0, ntunbound ),
+			list_sublist( nsunbound, start, thischunk ),
 			list_copy( L0, shell ),
 			maxline );
 /* commented so jamgram.y can compile #else
@@ -1648,9 +1901,9 @@ make1list(
 
 	if( flags & RULE_TOGETHER )
 	{
-	    LISTITEM *m = list_first(l);
+	    LISTITEM *m;
 
-	    for( m; m; m = list_next(m) )
+	    for( m = list_first(l); m; m = list_next(m) )
 		if( !strcmp( list_value(m), t->boundname ) )
 		    break;
 
@@ -1700,9 +1953,9 @@ make1list_unbound(
 
 	if( flags & RULE_TOGETHER )
 	{
-	    LISTITEM *m = list_first(l);
+	    LISTITEM *m;
 
-	    for( m; m; m = list_next(m) )
+	    for( m = list_first(l); m; m = list_next(m) )
 		if( !strcmp( list_value(m), t->boundname ) )
 		    break;
 

@@ -161,7 +161,11 @@ file_dirscan(
 /*	    struct stat attr;*/
 	    f.f_base.ptr = dirent->d_name;
 	    f.f_base.len = strlen(dirent->d_name);
+#ifdef OPT_ROOT_PATHS_AS_ABSOLUTE_EXT
+	    path_build( &f, filename, 0, 1 );
+#else
 	    path_build( &f, filename, 0 );
+#endif
 /*	    stat(filename, &attr);*/
 /*	    if ( attr.st_mode & S_IFDIR )*/
 		if ( dirent->d_type & DT_DIR )
@@ -185,7 +189,11 @@ file_dirscan(
 # endif
 	    f.f_base.len = strlen( f.f_base.ptr );
 
+#ifdef OPT_ROOT_PATHS_AS_ABSOLUTE_EXT
+	    path_build( &f, filename, 0, 1 );
+#else
 	    path_build( &f, filename, 0 );
+#endif
 
 	    (*func)( closure, filename, 0 /* not stat()'ed */, (time_t)0 );
 #endif
@@ -874,6 +882,13 @@ const char *md5tostring(MD5SUM sum)
 void md5file(const char *filename, MD5SUM sum)
 {
     MD5_CTX context;
+    struct stat statbuf;
+
+    if( stat( filename, &statbuf ) < 0 || S_ISDIR( statbuf.st_mode ) ) {
+        memset(sum, 0, sizeof(MD5SUM));
+        return;
+    }
+
 #define BLOCK_SIZE 1024 /* file is read in blocks of custom size, just so we don't have to read the whole file at once */
     FILE *f = fopen( filename, "rb" );
 

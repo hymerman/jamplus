@@ -13,24 +13,13 @@ rule Var {
 }
 
 
-# Helper rule used to get value of a variable bound to specific target.
-rule SearchVar {
-	local key ;
-	for key in $(1)
-	{
-		local value = $($(key)) ;
-		if $(value) { return $(value) ; }
-	}
-	return $(2) ;
-}
-
-
 SPACE = " " ;
 TAB = "	" ;
 NEWLINE = "
 " ;
+DOLLAR = $ ;
 
-JAMBASE_VERSION = "JamPlus 1.0 RC1 (2010.01.04)" ;
+JAMBASE_VERSION = "JamPlus 3.0 Alpha (2014.10.11)" ;
 
 #
 # OS specific variable settings
@@ -41,7 +30,7 @@ if $(NT)
 	MV		?= move /y ;
 	CP		?= copy ;
 	MKDIR	?= mkdir ;
-	MKDIR_RECURSIVE = ;
+	MKDIR_RECURSIVE = 1 ;
 	RM		?= del /f/q ;
 	RMDIR	?= rmdir /s/q ;
 	SLASH	?= / ;
@@ -94,28 +83,74 @@ Depends clean : clean:all ;
 
 JAM_MODULES_PATH ?= @($(JAM_PROCESS_PATH)/../modules:R=) ;
 
-rule UseModule MODULE_NAME : OPTIONS
+rule IncludeModule MODULE_NAME : OPTIONS
 {
 	local include_marker = included_module_$(MODULE_NAME:J=_) ;
 	if $($(include_marker))  &&  ! ( force in $(OPTIONS) ) {
-		return ;
+		return $(moduleName) ;
 	}
 	$(include_marker) = true ;
 
 	local moduleName = <jam:modules>$(MODULE_NAME).jam ;
-	SEARCH on $(moduleName) = $(SUBDIR) $(CWD) $(JAM_MODULES_USER_PATH) $(JAM_MODULES_PATH) ;
-
-	if optional in $(OPTIONS) {
-		NoCare $(moduleName) ;
+	local searchPaths = $(SUBDIR) $(CWD) $(CWD)/jam $(JAM_MODULES_USER_PATH) $(JAM_MODULES_PATH) ;
+	local searchPath ;
+	local foundPath ;
+	for searchPath in $(searchPaths) {
+		searchPath = $(moduleName:G=:R=$(searchPath)) ;
+		foundPath = [ Glob $(searchPath:D) : $(searchPath:D=) ] ;
+		if $(foundPath) {
+			break ;
+		}
+	}
+	if $(foundPath[1]:BL) = $(MODULE_NAME:BL) {
+		BINDING on $(moduleName) = $(foundPath[1]:BS) ;
+		LOCATE on $(moduleName) = $(foundPath[1]:D) ;
+	} else if ! ( optional in $(OPTIONS) ) {
+		if $(JAM_VERBOSE) {
+			Echo "include $(moduleName) -- Not found!" ;
+		}
+		return ;
 	}
 
+	if $(JAM_VERBOSE) {
+		Echo "include $(moduleName)" ;
+	}
 	include $(moduleName) ;
+
+	return $(moduleName) ;
 }
 
 
-rule IncludeModule MODULE_NAME : OPTIONS
+rule FindMissingRule RULE_NAME
 {
-	UseModule $(MODULE_NAME) : $(OPTIONS) ;
+	local components = [ Split $(RULE_NAME) : "." ] ;
+	local component ;
+	local path ;
+	for component in $(components) {
+		path += $(component) ;
+		IncludeModule $(path:LJ=/) ;
+		if [ RuleExists $(RULE_NAME) ] {
+			return $(RULE_NAME) ;
+		}
+	}
+
+	__MISSING_RULE_SCAN_LIST = $(RULE_NAME) ;
+
+	path = $(components:J=/) ;
+	local ruleName = $(components:J=.) ;
+	while true {
+		if ! $(path) {
+			return ;
+		}
+		ruleName = [ Subst $(path) : "/" : "." ] ;
+		ruleName = $(ruleName).* ;
+		if [ RuleExists $(ruleName) ] {
+			__MISSING_RULE_COMPONENTS = $(components) ;
+			return $(ruleName) ;
+		}
+		__MISSING_RULE_SCAN_LIST += $(ruleName) ;
+		path = $(path:P) ;
+	}
 }
 
 
@@ -401,18 +436,26 @@ rule SubDir SUBDIR_PATH : TARGET_DIRECTORY
 	# directory should not hold object files, LOCATE_TARGET can
 	# subsequently be redefined.
 
-	local target = /$(TARGET_DIRECTORY) ;
+	if ! $(ALL_LOCATE_TARGET) {
+		ALL_LOCATE_TARGET = @(.build:R=$(CWD)) ;
+		if [ Glob $(ALL_LOCATE_TARGET) : buildenvironment.config ] {
+			Echo "* A Jam workspace has already been created at:" ;
+			Echo ;
+			Echo "    " $(ALL_LOCATE_TARGET) ;
+			Echo ;
+			Echo * Please run Jam from within that directory. ;
+			Exit ;
+		}
+	}
 
-	local _optionalRoot ;
-	if $(ALL_LOCATE_TARGET) {
-		_optionalRoot = $(_top) ;
+	if ! $(DEPCACHE.$(DEPCACHE))  &&  ! $(JAM_NO_DEP_CACHE) {
+		DEPCACHE.$(DEPCACHE) = $(ALL_LOCATE_TARGET:E=.)/.depcache ;
+		Clean clean : $(DEPCACHE.$(DEPCACHE)) ;
 	}
 
 	SEARCH_SOURCE = $(SUBDIR) ;
-	LOCATE_SOURCE = [ FDirName $(ALL_LOCATE_TARGET) $(_optionalRoot) $(SUBDIR_DOWN) ] ;
-	LOCATE_SOURCE = $(LOCATE_SOURCE)$(target:E=) ;
-	LOCATE_TARGET = [ FDirName $(ALL_LOCATE_TARGET) $(_optionalRoot) $(SUBDIR_DOWN) ] ;
-	LOCATE_TARGET = $(LOCATE_TARGET)$(target:E=) ;
+	LOCATE_SOURCE = [ FDirName $(ALL_LOCATE_TARGET) $(TARGET_DIRECTORY[1]) $(_top) $(SUBDIR_DOWN) $(TARGET_DIRECTORY[2]) ] ;
+	LOCATE_TARGET = [ FDirName $(ALL_LOCATE_TARGET) $(TARGET_DIRECTORY[1]) $(_top) $(SUBDIR_DOWN) $(TARGET_DIRECTORY[2]) ] ;
 
 	SOURCE_GRIST = [ FGrist $(ALL_SUBDIR_TOKENS) ] ;
 	SOURCE_GRIST = $(SOURCE_GRIST)$(target:E=) ;
@@ -455,7 +498,7 @@ rule FSubDirPath
 	return $(_r:R=$($(<[1])-ROOT)) ;
 }
 
-rule SubInclude
+rule SubInclude TOKENS : FILENAME
 {
 	# SubInclude TOP d1 ... ;
 	#
@@ -464,22 +507,23 @@ rule SubInclude
 	# We use SubDir to get there, in case the included Jamfile
 	# either doesn't have its own SubDir (naughty) or is a subtree
 	# with its own TOP.
-	if ! $($(<[1]))
+	TOKENS ?= $(ALL_SUBDIR_TOKENS) ;
+	if ! $($(TOKENS[1]))
 	{
-	    Exit SubInclude $(<[1]) without prior SubDir $(<[1]) ;
+	    Exit SubInclude $(TOKENS[1]) without prior SubDir $(TOKENS[1]) ;
 	}
 
 	local jamfile ;
-	if $(>)
+	if $(FILENAME)
 	{
-		jamfile = $(>:S=.jam) ;
+		jamfile = $(FILENAME:S=.jam) ;
 	}
 	else
 	{
 		jamfile = $(JAMFILE) ;
 	}
 
-	local include_marker = included_$(<:J=_)_$(jamfile) ;
+	local include_marker = included_$(TOKENS:J=_)_$(jamfile) ;
 	if $($(include_marker))
 	{
 		return ;
@@ -488,7 +532,7 @@ rule SubInclude
 
 	local saveTokens = $(ALL_SUBDIR_TOKENS) ;
 	local saveCurrentJamfile = $(CURRENT_JAMFILE) ;
-	SubDir $(<) ;
+	SubDir $(TOKENS) ;
 
 	CURRENT_JAMFILE = $(jamfile:R=$(SUBDIR)) ;
 	include $(CURRENT_JAMFILE) ;
@@ -616,7 +660,7 @@ rule FRelPath
 # First, the (generic) UNIX versions
 #
 
-rule FQuote { return \\\"$(<)\\\" ; }
+rule FQuote { return \\\"$(<)\\\" ; }		#"
 
 rule FDirName
 {
@@ -647,7 +691,7 @@ actions piecemeal together existing removeemptydirs Clean
 }
 
 actions piecemeal together existing removeemptydirs CleanTree {
-	$(RM) -rf "$(2:\\)"
+	$(RM) -rf $(2:C)
 }
 
 if $(NT)
@@ -714,6 +758,10 @@ rule AutoSourceGroup SOURCES
 }
 
 
+rule ExternalProject TARGET : PROJECT_PATH : OPTIONS {
+}
+
+
 rule NoWorkspace WORKSPACE_NAME
 {
 }
@@ -745,11 +793,11 @@ rule Workspace WORKSPACE_NAME : TARGETS
 {
 }
 
-INCREDIBUILD ?= off ;
 
-if ! $(TARGETINFO_LOCATE) {
-	IncludeModule c-autodetect ;
+rule WorkspaceConfig WORKSPACE_NAME : CONFIG_NAME : ACTUAL_CONFIG_NAME : COMMAND_LINE_OPTIONS {
 }
+
+C ;
 
 #
 # Now include the user's Jamfile.

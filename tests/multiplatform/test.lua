@@ -16,7 +16,7 @@ function Test()
 	{
 	}
 
-	os.remove('.jamcache')
+	ospath.remove('.jamcache')
 	RunJam{ 'clean' }
 	TestDirectories(originalDirs)
 	TestFiles(originalFiles)
@@ -28,15 +28,15 @@ function Test()
 		local pattern
 	    if Platform == 'win32' then
 			pattern = [[
-*** found 21 target(s)...
-*** updating 6 target(s)...
-@ C.vc.CC <win32!release:platform>platform.obj
-!NEXT!@ C.vc.Link <win32!release:platform>platform.exe
-!NEXT!*** updated 6 target(s)...
+*** found 20 target(s)...
+*** updating 5 target(s)...
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):platform>platform.obj
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):platform>platform.exe
+!NEXT!*** updated 5 target(s)...
 ]]
 			pass1Directories = {
-				'win32-release/',
-				'win32-release/platform/',
+				'$(TOOLCHAIN_PATH)/',
+				'$(TOOLCHAIN_PATH)/platform/',
 			}
 
 			pass1Files =
@@ -50,12 +50,12 @@ function Test()
 				'macosx.c',
 				'platform.c',
 				'win32.c',
-				'win32-release/platform/filerelease.obj',
-				'win32-release/platform/platform.obj',
-				'win32-release/platform/platform.release.exe',
-				'?win32-release/platform/platform.release.exe.intermediate.manifest',
-				'win32-release/platform/platform.release.pdb',
-				'win32-release/platform/win32.obj',
+				'$(TOOLCHAIN_PATH)/platform/filerelease.obj',
+				'$(TOOLCHAIN_PATH)/platform/platform.obj',
+				'$(TOOLCHAIN_PATH)/platform/platform.exe',
+				'?$(TOOLCHAIN_PATH)/platform/platform.exe.intermediate.manifest',
+				'$(TOOLCHAIN_PATH)/platform/platform.pdb',
+				'$(TOOLCHAIN_PATH)/platform/win32.obj',
 			}
 
 		else
@@ -63,27 +63,37 @@ function Test()
 				pattern = [[
 *** found 12 target(s)...
 *** updating 5 target(s)...
-@ C.gcc.CC <macosx32!release:platform>platform.o 
-@ C.gcc.CC <macosx32!release:platform>macosx.o 
-@ C.gcc.CC <macosx32!release:platform>filerelease.o 
-@ C.gcc.Link <macosx32!release:platform>platform
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):platform>platform.o 
+!NEXT!@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):platform>macosx.o 
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):platform>filerelease.o 
+@ $(C_LINK) <$(TOOLCHAIN_GRIST):platform>platform
+*** updated 5 target(s)...
+]]
+			elseif Platform == 'linux' then
+				pattern = [[
+*** found 12 target(s)...
+*** updating 5 target(s)...
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):platform>platform.o 
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):platform>linux.o 
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):platform>filerelease.o 
+@ $(C_LINK) <$(TOOLCHAIN_GRIST):platform>platform
 *** updated 5 target(s)...
 ]]
 			else
 				pattern = [[
 *** found 11 target(s)...
 *** updating 4 target(s)...
-@ C.CC <platform>platform.o
-@ C.CC <platform>linux.o
-@ C.CC <platform>filerelease.o
-@ C.Link <platform>platform.release
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):platform>platform.o 
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):platform>linux.o 
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):platform>filerelease.o 
+@ $(C_LINK) <$(TOOLCHAIN_GRIST):platform>platform
 *** updated 4 target(s)...
 ]]
 			end
 
 			pass1Directories = {
-				'macosx32-release/',
-				'macosx32-release/platform/',
+				'$(TOOLCHAIN_PATH)/',
+				'$(TOOLCHAIN_PATH)/platform/',
 			}
 
 			pass1Files = {
@@ -97,16 +107,15 @@ function Test()
 				'platform.c',
 				'test.lua',
 				'win32.c',
-				'macosx32-release/platform/filerelease.o',
-				'macosx32-release/platform/macosx.o',
-				'macosx32-release/platform/platform.o',
-				'macosx32-release/platform/platform.release',
+				'$(TOOLCHAIN_PATH)/platform/filerelease.o',
+				'$(TOOLCHAIN_PATH)/platform/platform.o',
+				'$(TOOLCHAIN_PATH)/platform/platform',
 			}
 
 			if Platform == 'macosx' then
-				pass1Files[#pass1Files + 1] = 'macosx32-release/platform/macosx.o'
+				pass1Files[#pass1Files + 1] = '$(TOOLCHAIN_PATH)/platform/macosx.o'
 			else
-				pass1Files[#pass1Files + 1] = 'linux.o'
+				pass1Files[#pass1Files + 1] = '$(TOOLCHAIN_PATH)/platform/linux.o'
 			end
 
 		end
@@ -125,10 +134,10 @@ Using win32
 This is a Win32 build.
 RELEASE: What's up?!
 ]]
-		TestPattern(pattern2, ex.collectlines{'win32-release\\platform\\platform.release.exe'})
+		TestPattern(pattern2, osprocess.collectlines{'.build\\' .. PlatformDir .. '-release\\TOP\\platform\\platform.exe'})
 
 		pattern3 = [[
-*** found 21 target(s)...
+*** found 20 target(s)...
 ]]
 
 	elseif Platform == 'macosx' then
@@ -137,7 +146,7 @@ Using macosx
 This is a Mac OS X build.
 RELEASE: What's up?!
 ]]
-		TestPattern(pattern2, ex.collectlines{'./macosx32-release/platform/platform.release'})
+		TestPattern(pattern2, osprocess.collectlines{'./.build/' .. PlatformDir .. '-release/TOP/platform/platform'})
 
 		pattern3 = [[
 *** found 12 target(s)...
@@ -149,10 +158,10 @@ Using linux
 This is a Linux build.
 RELEASE: What's up?!
 ]]
-		TestPattern(pattern2, ex.collectlines{'./platform.release'})
+		TestPattern(pattern2, osprocess.collectlines{'./.build/' .. PlatformDir .. '-release/TOP/platform/platform'})
 
 		pattern3 = [[
-*** found 11 target(s)...
+*** found 12 target(s)...
 ]]
 
 	end
@@ -163,8 +172,10 @@ RELEASE: What's up?!
 	TestFiles(pass1Files)
 
 	---------------------------------------------------------------------------
-	os.remove('.jamcache')
+	ospath.remove('.jamcache')
 	RunJam{ 'clean' }
 	TestFiles(originalFiles)
 	TestDirectories(originalDirs)
 end
+
+TestChecksum = Test

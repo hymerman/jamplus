@@ -65,8 +65,9 @@ static const char *time_progress[] =
 
 void
 timestamp( 
-	char	*target,
-	time_t	*time )
+	const char	*target,
+	time_t	*time,
+	int      force )
 {
 	PATHNAME f1, f2;
 	BINDING	binding, *b = &binding;
@@ -94,6 +95,12 @@ timestamp(
 	if( hashenter( bindhash, (HASHDATA **)&b ) )
 	    b->name = newstr( target );		/* never freed */
 
+	if ( force )
+	{
+		b->progress = BIND_INIT;
+		b->time = b->flags = 0;
+	}
+
 	if( b->progress != BIND_INIT )
 	    goto afterscanning;
 
@@ -111,7 +118,11 @@ timestamp(
 	    f2 = f1;
 	    f2.f_grist.len = 0;
 	    path_parent( &f2 );
+#ifdef OPT_ROOT_PATHS_AS_ABSOLUTE_EXT
+	    path_build( &f2, buf, 0, 1 );
+#else
 	    path_build( &f2, buf, 0 );
+#endif
 
 	    b->name = buf;
 	    b->time = b->flags = 0;
@@ -120,6 +131,12 @@ timestamp(
 #if !defined(OPT_TIMESTAMP_IMMEDIATE_PARENT_CHECK_EXT)  &&  !defined(OPT_TIMESTAMP_EXTENDED_PARENT_CHECK_EXT)
 	    if( hashenter( bindhash, (HASHDATA **)&b ) )
 		b->name = newstr( buf );	/* never freed */
+
+		if ( force )
+		{
+			b->progress = BIND_INIT;
+			b->time = b->flags = 0;
+		}
 
 	    if( !( b->flags & BIND_SCANNED ) )
 	    {
@@ -131,6 +148,12 @@ timestamp(
 #ifdef OPT_TIMESTAMP_IMMEDIATE_PARENT_CHECK_EXT
 		if( hashenter( bindhash, (HASHDATA **)&b ) )
 			b->name = newstr( buf );	/* never freed */
+
+		if ( force )
+		{
+			b->progress = BIND_INIT;
+			b->time = b->flags = 0;
+		}
 
 		if( !( b->flags & BIND_SCANNED ) )
 		{
@@ -144,7 +167,11 @@ timestamp(
 				path_parse( buf, &f2 );
 				f2.f_grist.len = 0;
 				path_parent( &f2 );
+#ifdef OPT_ROOT_PATHS_AS_ABSOLUTE_EXT
+				path_build( &f2, buf2, 0, 1 );
+#else
 				path_build( &f2, buf2, 0 );
+#endif
 
 				b2->name = buf2;
 				b2->flags = 0;
@@ -186,6 +213,12 @@ timestamp(
 		{
 			/* See if the directory has already been entered into the hash table. */
 			int found = hashcheck( bindhash, (HASHDATA **)&b );
+
+			if ( force )
+			{
+				b->progress = BIND_INIT;
+				b->time = b->flags = 0;
+			}
 
 			/* If it wasn't there or hasn't been scanned yet... */
 			if( !found  ||  !( b->flags & BIND_SCANNED ) )
@@ -253,6 +286,11 @@ timestamp(
 
 							/* If the parent directory has been scanned, we can check to see if the */
 							/* child directory was in the list. */
+							if ( !( b2->flags & BIND_SCANNED ) )
+							{
+								file_dirscan( buf, time_enter, bindhash );
+								b2->flags |= BIND_SCANNED;
+							}
 							if ( b2->flags & BIND_SCANNED )
 							{
 								*prevPtr = 0;
@@ -335,7 +373,11 @@ timestamp(
 	    f2 = f1;
 	    f2.f_grist.len = 0;
 	    f2.f_member.len = 0;
+#ifdef OPT_ROOT_PATHS_AS_ABSOLUTE_EXT
+	    path_build( &f2, buf, 0, 1 );
+#else
 	    path_build( &f2, buf, 0 );
+#endif
 
 	    b->name = buf;
 	    b->time = b->flags = 0;
