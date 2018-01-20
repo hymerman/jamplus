@@ -25,26 +25,26 @@ rule C.ActiveTarget TARGET {
 	# C.ACTIVE_TARGET = ProjectName
 	C.ACTIVE_TARGET = $(TARGET) ;
 
-	# C.ACTIVE_TOOLCHAIN_TARGET = <c/win32/debug>ProjectName
+	# C.ACTIVE_TOOLCHAIN_TARGET = <win32/debug>ProjectName
 	C.ACTIVE_TOOLCHAIN_TARGET = $(TARGET:G=$(C.ACTIVE_TOOLCHAIN_GRIST)) ;
 
-	# C.ACTIVE_TOOLCHAIN_TARGET_GRIST = c/win32/debug:ProjectName
+	# C.ACTIVE_TOOLCHAIN_TARGET_GRIST = win32/debug:ProjectName
 	C.ACTIVE_TOOLCHAIN_TARGET_GRIST = $(C.ACTIVE_TOOLCHAIN_GRIST):$(TARGET) ;
 
-	# C.ACTIVE_TOOLCHAIN_CLEAN_TARGET = <c/win32/debug>clean:ProjectName
+	# C.ACTIVE_TOOLCHAIN_CLEAN_TARGET = <win32/debug>clean:ProjectName
 	local colon = ":" ;
 	C.ACTIVE_TOOLCHAIN_CLEAN_TARGET = @(clean$(colon)$(TARGET):G=$(C.ACTIVE_TOOLCHAIN_GRIST)) ;
 
-	# C.ACTIVE_TOOLCHAIN_ALLCLEAN_TARGET = <c/win32/debug>allclean:ProjectName
+	# C.ACTIVE_TOOLCHAIN_ALLCLEAN_TARGET = <win32/debug>allclean:ProjectName
 	C.ACTIVE_TOOLCHAIN_ALLCLEAN_TARGET = @(allclean$(colon)$(TARGET):G=$(C.ACTIVE_TOOLCHAIN_GRIST)) ;
 
-	# C.ACTIVE_TOOLCHAIN_* = <c/win32/debug>C.*
+	# C.ACTIVE_TOOLCHAIN_* = <win32/debug>C.*
 	C.ACTIVE_TOOLCHAIN_* = @(C.*:G=$(C.ACTIVE_TOOLCHAIN_GRIST)) ;
 
-#	if ! $(ALL_SUBDIR_TOKENS) {
-#		SubDir TOP ;
-#	}
-#
+	if ! $(ALL_SUBDIR_TOKENS)  &&  $(TARGET) != C.* {
+		SubDir TOP ;
+	}
+
 #	if $(TARGET) != C.* {
 	if $(ALL_SUBDIR_TOKENS)  &&  $(TARGET) != C.* {
 		SubDir : $(C.ACTIVE_TOOLCHAIN_SPEC_PATH) $(TARGET) ;
@@ -58,13 +58,14 @@ rule C.ActiveTarget TARGET {
 }
 
 rule C.GetLinkTargets TARGET : TOOLCHAIN_SPEC {
-	if $(TOOLCHAIN_SPEC) {
-		TOOLCHAIN_SPEC = c/$(TOOLCHAIN_SPEC) ;
-	} else {
-		TOOLCHAIN_SPEC = $(C.ACTIVE_TOOLCHAIN_GRIST) ;
-	}
+	TOOLCHAIN_SPEC ?= $(C.ACTIVE_TOOLCHAIN_GRIST) ;
 	local toolChainTarget = $(TARGET:G=$(TOOLCHAIN_SPEC)) ;
 	return $(LINKTARGETS:Z=$(toolChainTarget)) ;
+}
+
+rule C.GetArchitecture TOOLCHAIN_SPEC {
+	TOOLCHAIN_SPEC ?= $(C.ACTIVE_TOOLCHAIN_GRIST) ;
+	return $(C.ARCHITECTURE:Z=$(TOOLCHAIN_SPEC)) ;
 }
 
 rule C.Clean TARGET : FILES {
@@ -342,6 +343,7 @@ rule C._MultiCppCompile SOURCES {
 			_obj = $(_src)$(sufobj[2]) ;
 		}
 		BINDING on $(_obj) = $(_obj:BS) ;
+		ForceContentsOnly $(_obj) ;
 
 		$(makeobj_pass1) ;
 
@@ -582,8 +584,8 @@ rule C.Application TARGET : SOURCES : OPTIONS {
 		local objects = [ C._MultiCppCompile $(SOURCES) ] ;
 		LINKED_OBJECTS on $(C.ACTIVE_TOOLCHAIN_TARGET) += $(objects) ;
 		linkTargets = [ C._ApplicationFromObjects $(objects) : $(OPTIONS) ] ;
+		C.ARCHITECTURE on $(linkTargets) = $(C.ARCHITECTURE) ;
 	}
-	C.ActiveTarget * ;
 	return $(linkTargets) ;
 }
 
@@ -678,6 +680,8 @@ rule C._ApplicationFromObjects OBJECTS : OPTIONS {
 
 	UseCommandLine $(_linkTargets) : $(linkFlags) $(linkLibs) $(needLibs) $(_s) ;
 
+	ForceContentsOnly $(_linkTargets) ;
+
 	UseFileCache $(_linkTargets) : code ;
 	$(linkRule) $(_linkTargets) : $(_s) : $(C.COMPILER_SUITE_SYMBOL) : $(_extraChecksumTargets) ;
 
@@ -713,7 +717,7 @@ rule C.Library TARGET : SOURCES : OPTIONS {
 			linkTargets = [ C._LibraryFromObjects $(objects) ] ;
 		}
 	}
-	C.ActiveTarget * ;
+	C.ARCHITECTURE on $(linkTargets) = $(C.ARCHITECTURE) ;
 	return $(linkTargets) ;
 }
 
@@ -801,6 +805,7 @@ rule C._LibraryFromObjects OBJECTS {
 	;
 	Depends $(_l) : $(needLibs) ;
 
+	ForceContentsOnly $(_l) ;
 	UseCommandLine $(_l) : $(libFlags) $(_s) ;
 
 	UseFileCache $(_l) : code ;
@@ -932,6 +937,8 @@ rule C._SharedLibraryFromObjects OBJECTS : OPTIONS {
 	LINKFLAGS on $(_linkTargets) = $(linkFlags) ;
 
 	UseCommandLine $(_linkTargets) : $(linkFlags) $(linkLibs) $(needLibs) $(_s) ;
+
+	ForceContentsOnly $(_linkTargets) ;
 
 	UseFileCache $(_linkTargets) : code ;
 	$(linkRule) $(_linkTargets) : $(_s) : $(C.COMPILER_SUITE_SYMBOL) : $(_extraChecksumTargets) ;
@@ -1098,9 +1105,13 @@ rule C.LinkDirectories TARGET : DIRECTORIES {
 }
 
 
-rule C.LinkFlags TARGET : FLAGS {
+rule C.LinkFlags TARGET : FLAGS : OPTIONS {
 	C.ActiveTarget $(TARGET) ;
 	LINKFLAGS on $(C.ACTIVE_TOOLCHAIN_TARGET) += $(FLAGS) ;
+	if public in $(OPTIONS) {
+		__PUBLIC on $(C.ACTIVE_TOOLCHAIN_TARGET) = true ;
+		PUBLIC_LINKFLAGS on $(C.ACTIVE_TOOLCHAIN_TARGET) += $(FLAGS) ;
+	}
 }
 
 
@@ -1204,15 +1215,36 @@ rule C.Application TARGET : SOURCES : OPTIONS {
 
 	C._ApplicationTargetInfo ;
 
+	LINKTARGETS on $(C.ACTIVE_TOOLCHAIN_TARGET) = $(_linkTargets) ;
+	C.ARCHITECTURE on $(linkTargets) = $(C.ARCHITECTURE) ;
+
 	DumpProjectInfo $(TARGET) : $(SOURCES) : app $(OPTIONS) ;
-	C.ActiveTarget * ;
 	Depends all : $(TARGET) ;
 }
 
 
 rule C.Library TARGET : SOURCES : OPTIONS {
 	TARGET = [ C.ActiveTarget $(TARGET) ] ;
+
 	if shared in $(OPTIONS) {
+		local suffixName = SUFSHAREDLIB ;
+		if module in $(OPTIONS) {
+			suffixName = SUFMODULE ;
+		}
+
+		local suffix = $($(suffixName):Z=$(C.COMPILER_SUITE_SYMBOL)) ;
+		local _t = @($(TARGET)$(suffix):G=$(C.ACTIVE_TOOLCHAIN_TARGET_GRIST)) ;
+		local _tBINDING = [ C._retrieveOutputName : $(suffix) ] ;
+		BINDING on $(_t) = $(_tBINDING) ;
+		_tBINDING = $(_tBINDING:G=$(C.ACTIVE_TOOLCHAIN_TARGET_GRIST)) ;
+
+		local outputPath = [ C._retrieveOutputPath ] ;
+
+		local _linkTargets = $(_t) ;
+		MakeLocate $(_linkTargets) : $(outputPath) ;
+		LINKTARGETS on $(C.ACTIVE_TOOLCHAIN_TARGET) = $(_linkTargets) ;
+		C.ARCHITECTURE on $(_linkTargets) = $(C.ARCHITECTURE) ;
+
 		DumpProjectInfo $(TARGET) : $(SOURCES) : $(OPTIONS) ;
 	} else {
 		DumpProjectInfo $(TARGET) : $(SOURCES) : lib $(OPTIONS) ;
@@ -1454,6 +1486,12 @@ rule C.Inherits TARGET : INHERITS_TARGETS : OPTIONS {
 			PUBLIC_NEEDLIBS on $(C.ACTIVE_TOOLCHAIN_TARGET) += $(publicNeedLibs) ;
 		}
 
+		local publicLinkFlags = $(PUBLIC_LINKFLAGS:Z=$(inheritsTarget)) ;
+		if $(publicLinkFlags) {
+			LINKFLAGS on $(C.ACTIVE_TOOLCHAIN_TARGET) += $(publicLinkFlags) ;
+			PUBLIC_LINKFLAGS on $(C.ACTIVE_TOOLCHAIN_TARGET) += $(publicLinkFlags) ;
+		}
+
 		local theRule ;
 		for theRule in $(C._Inherits:Z=$(C.COMPILER_SUITE_SYMBOL)) {
 			$(theRule) ;
@@ -1570,8 +1608,7 @@ rule C.ToolchainSpecKeys TOOLCHAIN_SPEC_KEYS {
 		local newOptionsList ;
 
 		# First, convert the passed in TOOLCHAIN_SPEC_KEYS into the TOOLCHAIN_SPEC_OPTIONS
-		# format.  C.ACTIVE_TOOLCHAIN_SPEC_VALUES will contain the 'win32/debug' part from
-		# the TOOLCHAIN=c/win32/debug command line as a string list.
+		# format.
 		#
 		#     C.ACTIVE_TOOLCHAIN_SPEC_VALUES = win32 debug ;
 		#     TOOLCHAIN_SPEC_OPTIONS = C.COMPILER=vs2013 ;
@@ -1644,7 +1681,7 @@ rule C.OverrideToolchainSpec TOOLCHAIN_SPEC_OPTIONS : OPTIONS {
 }
 
 
-rule C.Toolchain TOOLCHAIN_SPEC {
+rule _C.ToolchainHelper TOOLCHAIN_SPEC {
 	# Null out any existing toolchain spec options.
 	local keyValue ;
 	for keyValue in $(TOOLCHAIN_SPEC_OPTIONS:Z=$(C.ACTIVE_TOOLCHAIN_GRIST)) {
@@ -1686,7 +1723,7 @@ rule C.Toolchain TOOLCHAIN_SPEC {
 	activeToolchainSpec = $(TOOLCHAIN_SPEC_VALUES:J=/) $(TOOLCHAIN_SPEC_OPTIONS) ;
 	C.ACTIVE_TOOLCHAIN = $(activeToolchainSpec:J=@) ;
 	C.ACTIVE_TOOLCHAIN_SPEC = $(activeToolchainSpec:J=@) ;
-	C.ACTIVE_TOOLCHAIN_GRIST = c/$(activeToolchainSpec:J=@) ;
+	C.ACTIVE_TOOLCHAIN_GRIST = $(activeToolchainSpec:J=@) ;
 	C.ACTIVE_TOOLCHAIN_SPEC_VALUES = $(TOOLCHAIN_SPEC_VALUES) ;
 
 	C.ActiveTarget * ;
@@ -1728,35 +1765,46 @@ rule C.Toolchain TOOLCHAIN_SPEC {
 	return $(C.ACTIVE_TOOLCHAIN_SPEC) ;
 }
 
+rule C.Toolchain TOOLCHAIN_SPEC {
+	if ! $(TOOLCHAIN_SPEC) {
+		Exit * C.Toolchain called with an empty invalid TOOLCHAIN_SPEC. ;
+	}
+	return [ _C.ToolchainHelper $(TOOLCHAIN_SPEC) ] ;
+}
+
+
+rule C.GetActiveToolchain {
+	return $(C.ACTIVE_TOOLCHAIN_SPEC) ;
+}
+
 ########################################################################
 ########################################################################
 
 if ! $(C.ACTIVE_TOOLCHAIN_GRIST) {
-	VALID_CONFIGS ?= release releaseltcg debug ;
-
-	switch $(OS)
-	{
-		case NT :
-			VALID_PLATFORMS ?= win64 win32 ;
-
-		case MACOSX :
-			VALID_PLATFORMS ?= macosx64 macosx32 ;
-
-		case LINUX :
-			VALID_PLATFORMS ?= linux64 linux32 ;
-	}
-
+	C.TOOLCHAIN ?= $(c.toolchain) ;
 	if $(C.TOOLCHAIN) {
-		C.Toolchain $(C.TOOLCHAIN) ;
-	} else if $(c.toolchain) {
-		C.Toolchain $(c.toolchain) ;
+		local TOOLCHAIN_SPEC = $(C.TOOLCHAIN) ;
+		local TOOLCHAIN_SPEC_VALUES = [ Split $(TOOLCHAIN_SPEC) : "@" ] ;
+		local TOOLCHAIN_SPEC_OPTIONS = $(TOOLCHAIN_SPEC_VALUES[2-]) ;
+		TOOLCHAIN_SPEC_VALUES = $(TOOLCHAIN_SPEC_VALUES[1]) ;
+		TOOLCHAIN_SPEC_VALUES = [ Split $(TOOLCHAIN_SPEC_VALUES) : / ] ;
+		local newToolchainSpecValues ;
+		if $(TOOLCHAIN_SPEC_VALUES[1]) = "-" {
+			newToolchainSpecValues += $(C.PLATFORM) ;
+		} else {
+			newToolchainSpecValues += $(TOOLCHAIN_SPEC_VALUES[1]) ;
+		}
+		if $(TOOLCHAIN_SPEC_VALUES[2]) = "-" {
+			newToolchainSpecValues += $(C.CONFIG) ;
+		} else {
+			newToolchainSpecValues += $(TOOLCHAIN_SPEC_VALUES[2]) ;
+		}
+		newToolchainSpecValues += $(TOOLCHAIN_SPEC_VALUES[3-]) ;
+		C.TOOLCHAIN = $(newToolchainSpecValues:J=/) $(TOOLCHAIN_SPEC_OPTIONS) ;
+		C.TOOLCHAIN = $(C.TOOLCHAIN:J=@) ;
 	} else {
-		CONFIG ?= $(VALID_CONFIGS[1]) ;
-
-		if $(PLATFORM) = "" { PLATFORM = ; }
-		PLATFORM ?= $(VALID_PLATFORMS[1]) ;
-
-		C.Toolchain $(PLATFORM)/$(CONFIG) ;
+		C.TOOLCHAIN = $(C.PLATFORM)/$(C.CONFIG) ;
 	}
+	_C.ToolchainHelper $(C.TOOLCHAIN) ;
 }
 

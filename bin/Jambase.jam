@@ -19,7 +19,7 @@ NEWLINE = "
 " ;
 DOLLAR = $ ;
 
-JAMBASE_VERSION = "JamPlus 3.0 Alpha (2014.10.11)" ;
+JAMBASE_VERSION = "JamPlus 3.0 Beta (2017.02.03)" ;
 
 #
 # OS specific variable settings
@@ -294,6 +294,7 @@ rule SubDir SUBDIR_PATH : TARGET_DIRECTORY
 	local _tokens = $(SUBDIR_PATH[2-]) ;
 
 	ALL_SUBDIR_TOKENS = $(SUBDIR_PATH) ;
+	__SUBDIR_TARGET_DIRECTORY = $(TARGET_DIRECTORY) ;
 
 	#
 	# First time through sets up relative root and includes Jamrules.
@@ -450,7 +451,7 @@ rule SubDir SUBDIR_PATH : TARGET_DIRECTORY
 
 	if ! $(DEPCACHE.$(DEPCACHE))  &&  ! $(JAM_NO_DEP_CACHE) {
 		DEPCACHE.$(DEPCACHE) = $(ALL_LOCATE_TARGET:E=.)/.depcache ;
-		Clean clean : $(DEPCACHE.$(DEPCACHE)) ;
+		Clean clean $(JAM_AUTOMATIC_BUILD_CLEAN_TARGET) : $(DEPCACHE.$(DEPCACHE)) ;
 	}
 
 	SEARCH_SOURCE = $(SUBDIR) ;
@@ -498,6 +499,8 @@ rule FSubDirPath
 	return $(_r:R=$($(<[1])-ROOT)) ;
 }
 
+local __SubIncludeStackIndex = 0 ;
+
 rule SubInclude TOKENS : FILENAME
 {
 	# SubInclude TOP d1 ... ;
@@ -530,17 +533,49 @@ rule SubInclude TOKENS : FILENAME
 	}
 	$(include_marker) = true ;
 
-	local saveTokens = $(ALL_SUBDIR_TOKENS) ;
-	local saveCurrentJamfile = $(CURRENT_JAMFILE) ;
+	__SubIncludeSaveTokens_$(__SubIncludeStackIndex) = $(ALL_SUBDIR_TOKENS) ;
+	__SubIncludeSaveTargetDirectory_$(__SubIncludeStackIndex) = $(__SUBDIR_TARGET_DIRECTORY) ;
+	__SubIncludeSaveCurrentJamfile_$(__SubIncludeStackIndex) = $(CURRENT_JAMFILE) ;
+	__SubIncludeStackIndex = [ Math $(__SubIncludeStackIndex) + 1 ] ;
+
 	SubDir $(TOKENS) ;
 
 	CURRENT_JAMFILE = $(jamfile:R=$(SUBDIR)) ;
-	include $(CURRENT_JAMFILE) ;
-
-	if $(saveTokens)
+	if [ Search $(CURRENT_JAMFILE) ]
 	{
-		SubDir $(saveTokens) ;
-		CURRENT_JAMFILE = $(saveCurrentJamfile) ;
+		include $(CURRENT_JAMFILE) ;
+	}
+	else
+	{
+		local jamfile.lua ;
+		if $(FILENAME)
+		{
+			jamfile.lua = $(FILENAME:S=.lua) ;
+		}
+		else
+		{
+			jamfile.lua = $(JAMFILE.LUA) ;
+		}
+		jamfile.lua = $(jamfile.lua:R=$(SUBDIR)) ;
+		if [ Search $(jamfile.lua) ]
+		{
+			LuaFile $(jamfile.lua) ;
+		}
+		else
+		{
+			Exit * Unable to find $(CURRENT_JAMFILE). ;
+		}
+	}
+
+	__SubIncludeStackIndex = [ Math $(__SubIncludeStackIndex) - 1 ] ;
+
+	if $(__SubIncludeSaveTokens_$(__SubIncludeStackIndex))
+	{
+		SubDir $(__SubIncludeSaveTokens_$(__SubIncludeStackIndex)) : $(__SubIncludeSaveTargetDirectory_$(__SubIncludeStackIndex)) ;
+		__SubIncludeSaveTokens_$(__SubIncludeStackIndex) = ;
+
+		CURRENT_JAMFILE = $(__SubIncludeSaveCurrentJamfile_$(__SubIncludeStackIndex)) ;
+		__SubIncludeSaveCurrentJamfile_$(__SubIncludeStackIndex) = ;
 	}
 }
 
@@ -797,10 +832,69 @@ rule Workspace WORKSPACE_NAME : TARGETS
 rule WorkspaceConfig WORKSPACE_NAME : CONFIG_NAME : ACTUAL_CONFIG_NAME : COMMAND_LINE_OPTIONS {
 }
 
-C ;
-
 #
 # Now include the user's Jamfile.
 #
 
-include $(JAMFILE) ;
+{
+	VALID_CONFIGS ?= release releaseltcg debug ;
+
+	switch $(OS)
+	{
+		case NT :
+			VALID_PLATFORMS ?= win64 win32 ;
+
+		case MACOSX :
+			VALID_PLATFORMS ?= macosx64 macosx32 ;
+
+		case LINUX :
+			VALID_PLATFORMS ?= linux64 linux32 ;
+	}
+
+	CONFIG ?= $(C.CONFIG) ;
+	PLATFORM ?= $(C.PLATFORM) ;
+	COMPILER ?= $(C.COMPILER) ;
+
+	CONFIG ?= $(VALID_CONFIGS[1]) ;
+
+	if $(PLATFORM) = "" { PLATFORM = ; }
+	PLATFORM ?= $(VALID_PLATFORMS[1]) ;
+
+	C.CONFIG ?= $(CONFIG) ;
+	C.PLATFORM ?= $(PLATFORM) ;
+	C.COMPILER ?= $(COMPILER) ;
+
+	C.TOOLCHAIN ?= $(c.toolchain) ;
+	if $(C.TOOLCHAIN)
+	{
+		C ;
+	}
+}
+
+JAMFILE.LUA ?= Jamfile.lua ;
+if [ Search $(JAMFILE) ] {
+	include $(JAMFILE) ;
+} else if [ Search $(JAMFILE.LUA) ] {
+	LuaFile $(JAMFILE.LUA) ;
+} else {
+	TARGET ?= $(JAM_COMMAND_LINE_TARGETS[1]) ;
+	if $(TARGET) = all
+	{
+		TARGET = ;
+	}
+	local splitTarget = [ Split $(TARGET) : ":" ] ;
+	if $(splitTarget[1]) = clean
+	{
+		JAM_AUTOMATIC_BUILD_CLEAN_TARGET = $(TARGET) ;
+		TARGET = $(splitTarget[2]) ;
+	}
+	WILDCARDS ?= $(JAM_COMMAND_LINE_TARGETS[2-]) ;
+	WILDCARDS ?= *@=*.c@=*.cpp@=*.m@=*.mm ;
+	local files = $(WILDCARDS:W) ;
+	if ($(files[1])) {
+		local target = $(TARGET:E=$(files[1]:B)) ;
+		C.OutputPath $(target) : $(CWD) ;
+		C.Application $(target) : $(files) ;
+		JAM_COMMAND_LINE_TARGETS = $(JAM_COMMAND_LINE_TARGETS[1]:E=$(target)) ;
+	}
+}

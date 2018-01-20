@@ -118,7 +118,7 @@ static void make0( TARGET *t, TARGET *p, int depth,
 
 static TARGETS *make0sort( TARGETS *c );
 #ifdef OPT_BUILTIN_MD5CACHE_EXT
-void make0calcmd5sum( TARGET *t, int source );
+void make0calcmd5sum( TARGET *t, int source, int depth );
 #endif
 #ifdef OPT_GRAPH_DEBUG_EXT
 static void dependGraphOutput( TARGET *t, int depth );
@@ -208,6 +208,7 @@ make_fixprogress(
 	t->parents = NULL;
 	t->flags &= ~T_FLAG_VISITED;
 	t->status = 0;
+	t->time = 0;
 
 	for ( actions = t->actions; actions; actions = actions->next )
 	{
@@ -525,16 +526,6 @@ make(
 	COUNTS counts[1];
 	int status = 0;		/* 1 if anything fails */
 
-#ifdef OPT_USE_CHECKSUMS_EXT
-	LIST *usechecksumslist = var_get("JAM_USE_CHECKSUMS");
-	if (usechecksumslist  &&  list_first(usechecksumslist)  &&  strcmp(list_value(list_first(usechecksumslist)), "1") == 0) {
-		LIST *nodepcachelist = var_get("JAM_NO_DEP_CACHE");
-		if (!nodepcachelist  ||  !list_first(nodepcachelist)  ||  strcmp(list_value(list_first(nodepcachelist)), "1") != 0) {
-			usechecksums = 1;
-		}
-	}
-#endif /* OPT_USE_CHECKSUMS_EXT */
-
 #ifdef OPT_INTERRUPT_FIX
 	signal( SIGINT, onintr );
 #endif
@@ -606,6 +597,9 @@ pass:
 		for( i = 0; i < n_targets; i++ )
 			make_fixprogress( bindtarget( targets[i] ) );
 
+#ifdef OPT_BUILTIN_MD5CACHE_EXT
+		checksums_nextpass();
+#endif /* OPT_BUILTIN_MD5CACHE_EXT */
 		donestamps();
 		++actionpass;
 
@@ -651,6 +645,19 @@ pass:
 #endif
 
     donestamps();
+
+#ifdef OPT_BUILTIN_MD5CACHE_EXT
+	for ( i = 0; i < n_targets; i++ )
+	{
+		if ( strcmp( targets[i], "clean" ) == 0 ) {
+			LIST *var = var_get( "JAM_CHECKSUMS_KEEPCACHE" );
+			if ( !var  ||  !list_first( var )  ||  strcmp( list_value( list_first( var ) ), "1") != 0 ) {
+				unlink( checksums_filename() );
+			}
+			break;
+		}
+	}
+#endif /* OPT_BUILTIN_MD5CACHE_EXT */
 
 #ifdef OPT_CLEAN_GLOBS_EXT
 	clean_unused_files();
@@ -726,22 +733,12 @@ make0(
 	TARGETS	*c, *incs;
 	TARGET 	*ptime = t;
 	time_t	last, leaf, hlast;
-#ifdef OPT_USE_CHECKSUMS_EXT
-	int	lastmd5filedirty;
-	int	hmd5filedirty;
-	int	leafmd5filedirty;
-#endif /* OPT_USE_CHECKSUMS_EXT */
 	int	fate;
 	const char *flag = "";
 	SETTINGS *s;
 #ifdef OPT_GRAPH_DEBUG_EXT
 	int	savedFate, oldTimeStamp;
 #endif
-	int localusechecksums =
-#ifdef OPT_USE_CHECKSUMS_EXT
-	        usechecksums  ||
-#endif /* OPT_USE_CHECKSUMS_EXT */
-            ( t->flags & T_FLAG_SCANCONTENTS );
 
 	/*
 	 * Step 1: initialize
@@ -756,6 +753,11 @@ make0(
 		t->depth = depth;
 	}
 #endif
+#ifdef OPT_USE_CHECKSUMS_EXT
+	if ( t->fate == T_FATE_INIT ) {
+		t->timestamp_epoch = -1000000001;
+	}
+#endif /* OPT_USE_CHECKSUMS_EXT */
 #ifdef OPT_MULTIPASS_EXT
 	if ( t->fate == T_FATE_INIT )
 		t->fate = T_FATE_MAKING;
@@ -763,9 +765,6 @@ make0(
 #else
 	t->fate = T_FATE_MAKING;
 #endif
-#ifdef OPT_USE_CHECKSUMS_EXT
-	t->flags &= ~T_FLAG_CHECKSUM_VISITED;
-#endif /* OPT_USE_CHECKSUMS_EXT */
 
 	/*
 	 * Step 2: under the influence of "on target" variables,
@@ -784,13 +783,6 @@ make0(
 		t->boundname = search( t->name, &t->time );
 		t->binding = t->time ? T_BIND_EXISTS : T_BIND_MISSING;
 	}
-
-#ifdef OPT_USE_CHECKSUMS_EXT
-	if ( localusechecksums && !( t->flags & ( T_FLAG_NOUPDATE | T_FLAG_NOTFILE ) ) )
-	{
-		getcachedmd5sum(t, 1);
-	}
-#endif /* OPT_USE_CHECKSUMS_EXT */
 
 	/* INTERNAL, NOTFILE header nodes have the time of their parents */
 
@@ -891,11 +883,7 @@ make0(
 			printf( "warning: %s depends on itself\n", c->target->name );
 #ifdef OPT_FIX_UPDATED
 		else if( ptime && ptime->binding != T_BIND_UNBOUND &&
-#ifdef OPT_USE_CHECKSUMS_EXT
-			(localusechecksums ? c->target->contentmd5sum_file_dirty : c->target->time > ptime->time) &&
-#else
 			c->target->time > ptime->time &&
-#endif /* OPT_USE_CHECKSUMS_EXT */
 			c->target->fate < T_FATE_NEWER )
 		{
 			/*
@@ -1014,13 +1002,7 @@ make0(
 			/* If the includes are newer than we are their original target
 				also needs to be marked newer. This is needed so that 'updated'
 				correctly will include the original target in the $(<) variable. */
-			if(
-#ifdef OPT_USE_CHECKSUMS_EXT
-				(localusechecksums ? c->target->includes->contentmd5sum_file_dirty : c->target->includes->time > ptime->time)
-#else
-				c->target->includes->time > ptime->time
-#endif /* OPT_USE_CHECKSUMS_EXT */
-				|| c->target->includes->fate > T_FATE_STABLE) {
+			if(c->target->includes->time > ptime->time || c->target->includes->fate > T_FATE_STABLE) {
 				c->target->fate = max( T_FATE_NEWER, c->target->fate );
 			}
 #endif
@@ -1037,10 +1019,6 @@ make0(
 
 	last = 0;
 	leaf = 0;
-#ifdef OPT_USE_CHECKSUMS_EXT
-	lastmd5filedirty = 0;
-	leafmd5filedirty = 0;
-#endif /* OPT_USE_CHECKSUMS_EXT */
 	fate = T_FATE_STABLE;
 
 	for( c = t->depends; c; c = c->next )
@@ -1056,23 +1034,14 @@ make0(
 		/* the leaf source nodes. */
 
 		leaf = max( leaf, c->target->leaf );
-#ifdef OPT_USE_CHECKSUMS_EXT
-		leafmd5filedirty |= c->target->leafmd5filedirty;
-#endif /* OPT_USE_CHECKSUMS_EXT */
 
 		if( t->flags & T_FLAG_LEAVES )
 		{
 			last = leaf;
-#ifdef OPT_USE_CHECKSUMS_EXT
-			lastmd5filedirty = leafmd5filedirty;
-#endif /* OPT_USE_CHECKSUMS_EXT */
 			continue;
 		}
 
 		last = max( last, c->target->time );
-#ifdef OPT_USE_CHECKSUMS_EXT
-		lastmd5filedirty |= c->target->contentmd5sum_file_dirty;
-#endif /* OPT_USE_CHECKSUMS_EXT */
 #ifdef OPT_GRAPH_DEBUG_EXT
 		if( DEBUG_FATE && fate < c->target->fate ) {
 			printf( "fate change  %s from %s to %s by dependency %s\n",
@@ -1092,9 +1061,6 @@ make0(
 	 */
 
 	hlast = t->includes ? t->includes->time : 0;
-#ifdef OPT_USE_CHECKSUMS_EXT
-	hmd5filedirty = t->includes ? t->includes->contentmd5sum_file_dirty : 0;
-#endif /* OPT_USE_CHECKSUMS_EXT */
 
 	/* Step 4c: handle NOUPDATE oddity */
 
@@ -1113,9 +1079,6 @@ make0(
 		}
 #endif
 		last = 0;
-#ifdef OPT_USE_CHECKSUMS_EXT
-		lastmd5filedirty = 0;
-#endif /* OPT_USE_CHECKSUMS_EXT */
 		t->time = 0;
 		fate = T_FATE_STABLE;
 	}
@@ -1159,22 +1122,19 @@ make0(
 					break;
 				}
 			}
-			if ( !targets->parentcommandlineoutofdate )
+			for ( targets = actions->action->sources; targets; targets = targets->next )
 			{
-				for ( targets = actions->action->sources; targets; targets = targets->next )
+				for( c = t->depends; c; c = c->next )
 				{
-					for( c = t->depends; c; c = c->next )
+					if ( targets->target == c->target )
 					{
-						if ( targets->target == c->target )
-						{
-							targets->parentcommandlineoutofdate = 1;
-							break;
-						}
-					}
-					if ( targets->parentcommandlineoutofdate )
-					{
+						targets->parentcommandlineoutofdate = 1;
 						break;
 					}
+				}
+				if ( targets->parentcommandlineoutofdate )
+				{
+					break;
 				}
 			}
 		}
@@ -1195,38 +1155,18 @@ make0(
 	{
 		fate = T_FATE_MISSING;
 	}
-	else if( t->binding == T_BIND_EXISTS
-#ifdef OPT_USE_CHECKSUMS_EXT
-		&& (localusechecksums ? lastmd5filedirty : last > t->time)
-#else
-		&& last > t->time
-#endif /* OPT_USE_CHECKSUMS_EXT */
-		)
+	else if( t->binding == T_BIND_EXISTS && last > t->time )
 	{
 #ifdef OPT_GRAPH_DEBUG_EXT
 		oldTimeStamp = 1;
 #endif
 		fate = T_FATE_OUTDATED;
 	}
-	else if(
-		t->binding == T_BIND_PARENTS
-#ifdef OPT_USE_CHECKSUMS_EXT
-		&& (localusechecksums ? lastmd5filedirty : last > p->time)
-#else
-		&& last > p->time
-#endif /* OPT_USE_CHECKSUMS_EXT */
-		)
+	else if( t->binding == T_BIND_PARENTS && last > p->time )
 	{
 		fate = T_FATE_NEEDTMP;
 	}
-	else if(
-		t->binding == T_BIND_PARENTS
-#ifdef OPT_USE_CHECKSUMS_EXT
-		&& (localusechecksums ? hmd5filedirty : hlast > p->time)
-#else
-		&& hlast > p->time
-#endif /* OPT_USE_CHECKSUMS_EXT */
-		)
+	else if( t->binding == T_BIND_PARENTS && hlast > p->time )
 	{
 #ifdef OPT_GRAPH_DEBUG_EXT
 		oldTimeStamp = 1;
@@ -1247,13 +1187,7 @@ make0(
 	}
 	// See http://maillist.perforce.com/pipermail/jamming/2003-January/001853.html.
 	else if( t->binding == T_BIND_EXISTS && p &&
-		p->binding != T_BIND_UNBOUND
-#ifdef OPT_USE_CHECKSUMS_EXT
-		&& (localusechecksums ? t->contentmd5sum_file_dirty : t->time > p->time)
-#else
-		&& t->time > p->time
-#endif /* OPT_USE_CHECKSUMS_EXT */
-		)
+		p->binding != T_BIND_UNBOUND && t->time > p->time )
 	{
 		fate = T_FATE_NEWER;
 	}
@@ -1339,10 +1273,6 @@ make0(
 
 	t->time = max( t->time, last );
 	t->leaf = leaf ? leaf : t->time ;
-#ifdef OPT_USE_CHECKSUMS_EXT
-	t->contentmd5sum_file_dirty |= lastmd5filedirty;
-	t->leafmd5filedirty |= (leafmd5filedirty | t->contentmd5sum_file_dirty);
-#endif /* OPT_USE_CHECKSUMS_EXT */
 	t->fate = (char)fate;
 
 	/*
@@ -1488,33 +1418,53 @@ make0sortbyname( TARGETS *chain )
 	return result;
 }
 
-static void make0recurseincludesmd5sum( MD5_CTX *context, TARGET *t )
+int make0calcmd5sum_epoch = -1000000000;
+int make0calcmd5sum_timestamp_epoch = -1000000000;
+
+static void make0recurseincludesmd5sum( MD5_CTX *context, TARGET *t, int depth )
 {
 	TARGETS *c;
 
 	for( c = t->depends; c; c = c->next )
 	{
-		if( c->target->binding == T_BIND_UNBOUND && !( c->target->flags & T_FLAG_NOTFILE ) )
+		if ( c->target->epoch == make0calcmd5sum_epoch )
 		{
-			SETTINGS *s = copysettings( c->target->settings );
-			pushsettings( s );
-			c->target->boundname = search( c->target->name, &c->target->time );
-			popsettings( s );
-			freesettings( s );
+			continue;
+		}
+		c->target->epoch = make0calcmd5sum_epoch;
+
+		if( ( c->target->binding == T_BIND_UNBOUND || c->target->time == 0 ) && !( c->target->flags & T_FLAG_NOTFILE )
+				&& c->target->timestamp_epoch != make0calcmd5sum_timestamp_epoch )
+		{
+			c->target->timestamp_epoch = make0calcmd5sum_timestamp_epoch;
+			pushsettings( c->target->settings );
+			c->target->boundname = search_uncached( c->target->name, &c->target->time );
+			popsettings( c->target->settings );
 			c->target->binding = c->target->time ? T_BIND_EXISTS : T_BIND_MISSING;
 		}
 		if ( !( c->target->flags & T_FLAG_NOTFILE ) && !( c->target->flags & T_FLAG_INTERNAL ) && !( c->target->flags & T_FLAG_NOUPDATE ) )
 		{
-			getcachedmd5sum( c->target, 1 );
-			if ( c->target->contentmd5sum_calculated )
+			getcachedmd5sum( c->target, 0 );
+			if ( !( c->target->flags & T_FLAG_IGNORECONTENTS )  &&  c->target->contentchecksum  &&  !ismd5empty( c->target->contentchecksum->contentmd5sum ) )
 			{
-				MD5Update( context, c->target->contentmd5sum, sizeof( c->target->contentmd5sum ) );
+				MD5Update( context, c->target->contentchecksum->contentmd5sum, sizeof( c->target->contentchecksum->contentmd5sum ) );
 				if( DEBUG_MD5HASH )
-					printf( "\t\t%s: %s\n", c->target->name, md5tostring( c->target->contentmd5sum ) );
+					printf( "\t\t%s%s: md5 %s\n", spaces( depth ), c->target->name, md5tostring( c->target->contentchecksum->contentmd5sum ) );
 			}
 		}
+
+		/* add sum of your includes */
+		if ( !c->target->includes )
+		{
+			SETTINGS *s = copysettings( c->target->settings );
+			pushsettings( s );
+			headers( c->target );
+			popsettings( s );
+			freesettings( s );
+		}
+
 		if ( c->target->includes )
-			make0recurseincludesmd5sum( context, c->target->includes );
+			make0recurseincludesmd5sum( context, c->target->includes, depth + 1 );
 	}
 }
 
@@ -1522,7 +1472,7 @@ static void make0recurseincludesmd5sum( MD5_CTX *context, TARGET *t )
 /*
  * make0calcmd5sum() - calculate md5sum for a buildable target
  */
-void make0calcmd5sum( TARGET *t, int source )
+void make0calcmd5sum( TARGET *t, int source, int depth )
 {
 	MD5_CTX context;
 	TARGETS *c;
@@ -1530,26 +1480,32 @@ void make0calcmd5sum( TARGET *t, int source )
 	if ( t->buildmd5sum_calculated )
 		return;
 
-	if ( ( t->flags & T_FLAG_NOTFILE ) || ( t->flags & T_FLAG_INTERNAL ) || ( t->flags & T_FLAG_NOUPDATE ) )
+	if ( ( t->flags & T_FLAG_NOUPDATE ) || ( t->flags & T_FLAG_INTERNAL ) )
 	{
-		memset( &t->buildmd5sum, 0, sizeof( t->buildmd5sum ) );
+		//memset( &t->buildmd5sum, 0, sizeof( t->buildmd5sum ) );
+		//t->buildmd5sum_calculated = 1;
 		return;
 	}
-
-	getcachedmd5sum( t, 1 );
-
+	if ( ( t->flags & T_FLAG_NOTFILE ) )
+	{
+		//memset( &t->buildmd5sum, 0, sizeof( t->buildmd5sum ) );
+		//return;
+	}
 	if ( !source )
 	{
-		memset( &t->buildmd5sum, 0, sizeof( t->buildmd5sum ) );
+		//memset( &t->buildmd5sum, 0, sizeof( t->buildmd5sum ) );
+		//t->buildmd5sum_calculated = 1;
 		return;
 	}
 
-	if ( !t->contentmd5sum_calculated )
-	{
-		memset( &t->buildmd5sum, 0, sizeof( t->buildmd5sum ) );
-		t->buildmd5sum_calculated = 0;
-		return;
-	}
+	getcachedmd5sum( t, 0 );
+
+	//if ( !t->contentchecksum  ||  ismd5empty( t->contentchecksum->contentmd5sum ) )
+	//{
+		//memset( &t->buildmd5sum, 0, sizeof( t->buildmd5sum ) );
+		//t->buildmd5sum_calculated = 0;
+		//return;
+	//}
 
 	/* sort all dependents by name, so we can make reliable md5sums */
 	t->depends = make0sortbyname( t->depends );
@@ -1560,15 +1516,18 @@ void make0calcmd5sum( TARGET *t, int source )
 	MD5Update( &context, (unsigned char*)t->name, (unsigned int)strlen( t->name ) );
 
 	if( DEBUG_MD5HASH )
-		printf( "\t\t%s\n", t->name );
+		printf( "\t\t%starget: %s\n", spaces( depth ), t->name );
 
     /* if this is a source */
-    if (source)
-    {
+	if (source  &&  !(t->flags & T_FLAG_IGNORECONTENTS))
+	{
 		/* start by adding your own content */
-		MD5Update( &context, t->contentmd5sum, sizeof( t->contentmd5sum ) );
-		if( DEBUG_MD5HASH )
-			printf( "\t\tcontent: %s\n", md5tostring( t->contentmd5sum ) );
+		if (t->contentchecksum  &&  !ismd5empty(t->contentchecksum->contentmd5sum))
+		{
+			MD5Update( &context, t->contentchecksum->contentmd5sum, sizeof( t->contentchecksum->contentmd5sum ) );
+			if( DEBUG_MD5HASH )
+				printf( "\t\t%scontent: %s\n", spaces( depth ), md5tostring( t->contentchecksum->contentmd5sum ) );
+		}
 	}
 
     /* add in the COMMANDLINE */
@@ -1585,7 +1544,7 @@ void make0calcmd5sum( TARGET *t, int source )
 					char const* str = list_value(item);
 					MD5Update( &context, (unsigned char*)str, (unsigned int)strlen(str) );
 					if( DEBUG_MD5HASH )
-						printf( "\t\tCOMMANDLINE: %s\n", str );
+						printf( "\t\t%sCOMMANDLINE: %s\n", spaces( depth ), str );
 				}
 
 				break;
@@ -1594,7 +1553,7 @@ void make0calcmd5sum( TARGET *t, int source )
 	}
 
 	/* add sum of your includes */
-	if ( !t->includes )
+	//if ( !t->includes )
 	{
 		SETTINGS *s = copysettings( t->settings );
 		pushsettings( s );
@@ -1609,8 +1568,8 @@ void make0calcmd5sum( TARGET *t, int source )
 		MD5Update( &context, (unsigned char*)includesStr, (unsigned int)strlen( includesStr ) );
 
 		if( DEBUG_MD5HASH )
-			printf( "\t\t#includes:\n" );
-		make0recurseincludesmd5sum( &context, t->includes );
+			printf( "\t\t%s#includes:\n", spaces( depth ) );
+		make0recurseincludesmd5sum( &context, t->includes, depth + 1 );
 	}
 
     /* for each of your dependencies */
@@ -1622,20 +1581,33 @@ void make0calcmd5sum( TARGET *t, int source )
 			continue;
 		}
 
-		make0calcmd5sum( c->target, 1 );
+		if (c->target->epoch == make0calcmd5sum_epoch)
+		{
+			continue;
+		}
+		make0calcmd5sum( c->target, 1, depth + 1 );
 
 		/* add name of the dependency and its contents */
 		if ( c->target->buildmd5sum_calculated )
 		{
 			if( DEBUG_MD5HASH )
-				printf( "\t\tdepends: %s %s\n", c->target->name, md5tostring( c->target->buildmd5sum ) );
+				printf( "\t\t%sdepends: %s %s\n", spaces( depth ), c->target->name, md5tostring( c->target->buildmd5sum ) );
 			MD5Update( &context, (unsigned char*)c->target->name, (unsigned int)strlen( c->target->name ) );
-			MD5Update( &context, c->target->buildmd5sum, sizeof( c->target->buildmd5sum ) );
+			if ( !( c->target->flags & T_FLAG_FORCECONTENTSONLY ) )
+			{
+				MD5Update( &context, c->target->buildmd5sum, sizeof( c->target->buildmd5sum ) );
+			}
+			else if ( !( c->target->flags & T_FLAG_IGNORECONTENTS )  &&  c->target->contentchecksum  &&  !ismd5empty( c->target->contentchecksum->contentmd5sum ) )
+			{
+				MD5Update( &context, c->target->contentchecksum->contentmd5sum, sizeof( c->target->contentchecksum->contentmd5sum ) );
+				if( DEBUG_MD5HASH )
+					printf( "\t\t  %s%s: md5 %s\n", spaces( depth ), c->target->name, md5tostring( c->target->contentchecksum->contentmd5sum ) );
+			}
 		}
 	}
 	MD5Final( t->buildmd5sum, &context );
 	if( DEBUG_MD5HASH ) {
-		printf( "%s (%s)\n", t->name, md5tostring(t->buildmd5sum));
+		printf( "%sbuildmd5sum: %s (%s)\n", spaces( depth ), t->name, md5tostring(t->buildmd5sum));
 	}
 
 	t->buildmd5sum_calculated = 1;
@@ -1695,40 +1667,40 @@ dependGraphOutput( TARGET *t, int depth )
 	switch( t->fate )
 	{
 		case T_FATE_STABLE:
-			printf( "  %s       : Stable\n", spaces(depth) );
+			printf( "  %s   Fate: Stable\n", spaces(depth) );
 			break;
 		case T_FATE_NEWER:
-			printf( "  %s       : Newer\n", spaces(depth) );
+			printf( "  %s   Fate: Newer\n", spaces(depth) );
 			break;
 		case T_FATE_ISTMP:
-			printf( "  %s       : Up to date temp file\n", spaces(depth) );
+			printf( "  %s   Fate: Up to date temp file\n", spaces(depth) );
 			break;
 		case T_FATE_TOUCHED:
-			printf( "  %s       : Been touched, updating it\n", spaces(depth) );
+			printf( "  %s   Fate: Been touched, updating it\n", spaces(depth) );
 			break;
 		case T_FATE_MISSING:
-			printf( "  %s       : Missing, creating it\n", spaces(depth) );
+			printf( "  %s   Fate: Missing, creating it\n", spaces(depth) );
 			break;
 		case T_FATE_OUTDATED:
-			printf( "  %s       : Outdated, updating it\n", spaces(depth) );
+			printf( "  %s   Fate: Outdated, updating it\n", spaces(depth) );
 			break;
 		case T_FATE_UPDATE:
-			printf( "  %s       : Updating it\n", spaces(depth) );
+			printf( "  %s   Fate: Updating it\n", spaces(depth) );
 			break;
 		case T_FATE_CANTFIND:
-			printf( "  %s       : Can't find it\n", spaces(depth) );
+			printf( "  %s   Fate: Can't find it\n", spaces(depth) );
 			break;
 		case T_FATE_CANTMAKE:
-			printf( "  %s       : Can't make it\n", spaces(depth) );
+			printf( "  %s   Fate: Can't make it\n", spaces(depth) );
 			break;
 	}
 
-	printf( "  %s  Times: ", spaces(depth) );
+	printf( "  %s   Time: ", spaces(depth) );
 	dependGraphOutputTimes( t->time );
 
 	if( t->flags & ~T_FLAG_VISITED )
 	{
-		printf( "  %s       : ", spaces(depth) );
+		printf( "  %s  Flags: ", spaces(depth) );
 		if( t->flags & T_FLAG_TEMP ) printf ("TEMPORARY ");
 		if( t->flags & T_FLAG_NOCARE ) printf ("NOCARE ");
 		if( t->flags & T_FLAG_FORCECARE ) printf ("FORCECARE ");
@@ -1740,14 +1712,16 @@ dependGraphOutput( TARGET *t, int depth )
 #ifdef OPT_BUILTIN_NEEDS_EXT
 		if( t->flags & T_FLAG_MIGHTNOTUPDATE ) printf ("MIGHTNOTUPDATE ");
 		if( t->flags & T_FLAG_SCANCONTENTS ) printf ("SCANCONTENTS ");
+		if( t->flags & T_FLAG_IGNORECONTENTS ) printf ("IGNORECONTENTS ");
+		if( t->flags & T_FLAG_FORCECONTENTSONLY ) printf ("FORCECONTENTSONLY ");
 #endif
 		printf( "\n" );
 	}
 
 	for( c = t->depends; c; c = c->next )
 	{
-		printf( "  %s       : Depends on %s (%s) ", spaces(depth),
-			c->target->name, target_fate[ c->target->fate ] );
+		printf( "  %s       : %s %s%s (%s) ", spaces(depth),
+           c->needs ? "Needs" : "Depends on", (c->target->flags & T_FLAG_INTERNAL) ? "(internal) " : "", c->target->name, target_fate[ c->target->fate ] );
 		dependGraphOutputTimes( c->target->time );
 	}
 

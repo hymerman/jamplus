@@ -112,7 +112,7 @@ function Test()
 @ C.$(COMPILER).C++ <$(TOOLCHAIN_GRIST):project1>adefine.o 
 @ C.$(COMPILER).C++ <$(TOOLCHAIN_GRIST):common>print.o 
 @ $(C_ARCHIVE) <$(TOOLCHAIN_GRIST):common>common.a 
-@ $(C_LINK) <$(TOOLCHAIN_GRIST):project1>project1 
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):project1>project1 
 *** updated 7 target(s)...
 ]]
 
@@ -293,6 +293,13 @@ extern void Print(const char* str);
 ]]
 		TestPattern(pattern2, RunJam())
 	
+		if useChecksums then
+			pattern2 = [[
+*** found 35 target(s)...
+*** updating 2 target(s)...
+*** updated 2 target(s)...
+]]
+		end
 		osprocess.sleep(1.0)
 		ospath.touch('common/print.h')
 		TestPattern(pattern2, RunJam())
@@ -338,7 +345,7 @@ extern void Print(const char* str);
 @ C.$(COMPILER).C++ <$(TOOLCHAIN_GRIST):project1>adefine.o 
 @ C.$(COMPILER).C++ <$(TOOLCHAIN_GRIST):common>print.o 
 @ $(C_ARCHIVE) <$(TOOLCHAIN_GRIST):common>common.a 
-@ $(C_LINK) <$(TOOLCHAIN_GRIST):project1>project1 
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):project1>project1 
 *** updated 7 target(s)...
 ]]
 
@@ -381,18 +388,35 @@ extern void Print(const char* str);
 
 		osprocess.sleep(1.0)
 		ospath.touch('common/print.h')
+		local pattern2 = [[
+*** found 17 target(s)...
+*** updating 2 target(s)...
+*** updated 2 target(s)...
+]]
 		TestPattern(pattern2, RunJam())
 
 		osprocess.sleep(1.0)
 		WriteModifiedFileA()
 
-		local pattern3 = [[
+		if Platform == 'linux' then
+			local pattern3 = [[
 *** found 17 target(s)...
 *** updating 2 target(s)...
 @ C.$(COMPILER).C++ <$(TOOLCHAIN_GRIST):project1>project1.o 
-*** updated 1 target(s)...
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):project1>project1 
+*** updated 2 target(s)...
 ]]
-		TestPattern(pattern3, RunJam())
+			TestPattern(pattern3, RunJam())
+		else
+			local pattern3 = [[
+*** found 17 target(s)...
+*** updating 2 target(s)...
+@ C.$(COMPILER).C++ <$(TOOLCHAIN_GRIST):project1>project1.o 
+*** updated 2 target(s)...
+]]
+			TestPattern(pattern3, RunJam())
+		end
+
 		TestFiles(pass1Files)
 		TestDirectories(pass1Directories)
 

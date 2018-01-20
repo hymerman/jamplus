@@ -1,9 +1,0 @@
-Project assets ;
-NotFile assets ;
-
-if ! $(TARGETINFO_LOCATE) {
-    IncludeModule luasupport ;
-    LuaFile $(SUBDIR)/Jamfile.lua ;
-}
-
-

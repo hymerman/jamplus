@@ -126,6 +126,17 @@ namespace LPCD {
 	template<> struct Type<unsigned long&> : public Type<unsigned long> {};
 	template<> struct Type<const unsigned long&> : public Type<unsigned long> {};
 
+#if defined(_WIN64)
+	// size_t types
+	template<> struct Type<size_t> {
+		static inline void Push(lua_State* L, size_t value)								{  lua_pushinteger(L, (lua_Integer)value);  }
+		static inline bool Match(lua_State* L, int idx)									{  return lua_type(L, idx) == LUA_TNUMBER;  }
+		static inline size_t Get(lua_State* L, int idx)									{  return static_cast<size_t>(lua_tointeger(L, idx));  }
+	};
+	template<> struct Type<size_t&> : public Type<size_t> {};
+	template<> struct Type<const size_t&> : public Type<size_t> {};
+#endif // _WIN64
+
 	// float types
 	template<> struct Type<float> {
 		static inline void Push(lua_State* L, float value)								{  lua_pushnumber(L, (lua_Number)value);  }
@@ -143,6 +154,15 @@ namespace LPCD {
 	};
 	template<> struct Type<double&> : public Type<double> {};
 	template<> struct Type<const double&> : public Type<double> {};
+
+	// int types
+	template<> struct Type<lua_Integer> {
+		static inline void Push(lua_State* L, lua_Integer value)						{  lua_pushinteger(L, value);  }
+		static inline bool Match(lua_State* L, int idx)									{  return lua_type(L, idx) == LUA_TNUMBER;  }
+		static inline int Get(lua_State* L, int idx)									{  return static_cast<int>(lua_tonumber(L, idx));  }
+	};
+	template<> struct Type<lua_Integer&> : public Type<lua_Integer> {};
+	template<> struct Type<const lua_Integer&> : public Type<lua_Integer> {};
 
 	// character pointer types
 	template<> struct Type<char*> {

@@ -998,6 +998,16 @@ void ls_lua_init()
             LuaTilde_Command(host, "waitfordebuggerconnection", NULL, NULL);
         }
     }
+
+    if (ruleexists("LuaSupport"))
+    {
+        LOL lol;
+        LIST *result;
+        lol_init(&lol);
+        result = evaluate_rule("LuaSupport", &lol, L0);
+        lol_free(&lol);
+        list_free(result);
+    }
 }
 
 

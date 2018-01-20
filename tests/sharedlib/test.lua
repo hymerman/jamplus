@@ -46,6 +46,7 @@ if Platform == 'win32' then
 		'app/Jamfile.jam',
 		'app/main.c',
 		'image/.depcache',
+		'?image/.jamchecksums',
 		'image/app.exe',
 		'image/app.pdb',
 		'image/slib-a.dll',
@@ -96,6 +97,7 @@ else
 		'app/Jamfile.jam',
 		'app/main.c',
 		'image/.depcache',
+		'?image/.jamchecksums',
 		'image/app',
 		'image/slib-a.so',
 		'image/slib-b.so',
@@ -201,7 +203,7 @@ else
 !NEXT!@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):slib-a>slib-a.o 
 @ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):lib-c>add.o 
 @ $(C_ARCHIVE) <$(TOOLCHAIN_GRIST):lib-c>lib-c.a 
-@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-a>slib-a.so 
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-a>slib-a.so 
 @ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):slib-b>slib-b.o 
 @ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-b>slib-b.so 
 @ $(C_LINK) <$(TOOLCHAIN_GRIST):app>app
@@ -223,13 +225,25 @@ else
 		*** updated 7 target(s)...
 ]]
 
-	pass3Pattern_useChecksums = [[
+	if Platform == 'linux' then
+		pass3Pattern_useChecksums = [[
+		*** found 26 target(s)...
+		*** updating 7 target(s)...
+		@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):slib-a>slib-a.o 
+		@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-a>slib-a.so 
+		@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):slib-b>slib-b.o 
+		@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-b>slib-b.so 
+		*** updated 7 target(s)...
+]]
+	else
+		pass3Pattern_useChecksums = [[
 		*** found 26 target(s)...
 		*** updating 7 target(s)...
 		@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):slib-a>slib-a.o 
 		@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):slib-b>slib-b.o 
-		*** updated 2 target(s)...
+		*** updated 7 target(s)...
 ]]
+	end
 
 	pass4Pattern = [[
 		*** found 26 target(s)...
@@ -240,7 +254,7 @@ else
 		*** updating 7 target(s)...
 		@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):lib-c>add.o 
 		@ $(C_ARCHIVE) <$(TOOLCHAIN_GRIST):lib-c>lib-c.a 
-		@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-a>slib-a.so 
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-a>slib-a.so 
 		@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-b>slib-b.so 
 		@ $(C_LINK) <$(TOOLCHAIN_GRIST):app>app
 		*** updated 7 target(s)...
@@ -251,9 +265,9 @@ else
 		*** updating 7 target(s)...
 		@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):lib-c>add.o 
 		@ $(C_ARCHIVE) <$(TOOLCHAIN_GRIST):lib-c>lib-c.a 
-		@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-a>slib-a.so 
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-a>slib-a.so 
 		@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-b>slib-b.so 
-		*** updated 6 target(s)...
+		*** updated 7 target(s)...
 ]]
 
 	pass6Pattern = [[
@@ -274,7 +288,7 @@ else
 		*** updating 4 target(s)...
 		@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):slib-a>slib-a.o 
 		@ $(C_LINK) <$(TOOLCHAIN_GRIST):slib-a>slib-a.so 
-		*** updated 3 target(s)...
+		*** updated 4 target(s)...
 ]]
 
 	pass8Pattern = [[
@@ -390,7 +404,22 @@ void ExportA2()
 		ospath.touch('lib-c/add.h')
 
 		if useChecksums then
-			TestPattern(pass2Pattern, RunJam{})
+			local noopPattern
+			if Platform == 'win32' then
+				noopPattern = [[
+*** found 26 target(s)...
+*** updating 4 target(s)...
+*** updated 5 target(s)...
+]]
+			else
+				noopPattern = [[
+*** found 28 target(s)...
+*** updating 7 target(s)...
+*** updated 7 target(s)...
+]]
+			end
+
+			TestPattern(noopPattern, RunJam{})
 
 			osprocess.sleep(1.0)
 			WriteModifiedFileA()
@@ -414,7 +443,22 @@ void ExportA2()
 		ospath.touch('lib-c/add.c')
 
 		if useChecksums then
-			TestPattern(pass4Pattern, RunJam{})
+			local noopPattern
+			if Platform == 'win32' then
+				noopPattern = [[
+*** found 26 target(s)...
+*** updating 4 target(s)...
+*** updated 5 target(s)...
+]]
+			else
+				noopPattern = [[
+*** found 28 target(s)...
+*** updating 7 target(s)...
+*** updated 7 target(s)...
+]]
+			end
+
+			TestPattern(noopPattern, RunJam{})
 
 			osprocess.sleep(1.0)
 			WriteModifiedFileB()
@@ -438,7 +482,22 @@ void ExportA2()
 		ospath.touch('slib-a/slib-a.c')
 
 		if useChecksums then
-			TestPattern(pass6Pattern, RunJam{})
+			local noopPattern
+			if Platform == 'win32' then
+				noopPattern = [[
+*** found 26 target(s)...
+*** updating 2 target(s)...
+*** updated 3 target(s)...
+]]
+			else
+				noopPattern = [[
+*** found 28 target(s)...
+*** updating 4 target(s)...
+*** updated 4 target(s)...
+]]
+			end
+
+			TestPattern(noopPattern, RunJam{})
 
 			osprocess.sleep(1.0)
 			WriteModifiedFileC()

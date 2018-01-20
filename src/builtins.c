@@ -249,7 +249,16 @@ load_builtins()
     bindrule( "ScanContents" )->procedure =
     bindrule( "SCANCONTENTS" )->procedure =
 	parse_make( builtin_flags, P0, P0, P0, C0, C0, T_FLAG_SCANCONTENTS );
+
+    bindrule( "IgnoreContents" )->procedure =
+    bindrule( "IGNORECONTENTS" )->procedure =
+	parse_make( builtin_flags, P0, P0, P0, C0, C0, T_FLAG_IGNORECONTENTS );
+
 #endif
+
+    bindrule( "ForceContentsOnly" )->procedure =
+    bindrule( "FORCECONTENTSONLY" )->procedure =
+	parse_make( builtin_flags, P0, P0, P0, C0, C0, T_FLAG_FORCECONTENTSONLY );
 
 #ifdef OPT_BUILTIN_NEEDS_EXT
     bindrule( "MightNotUpdate" )->procedure =
@@ -1331,7 +1340,7 @@ builtin_expandfilelist(
     for (file = list_first(files) ; file; file = list_next(file) ) {
 		int wildcard = 0;
 		const char* ptr = list_value(file);
-		while ( *ptr ) {
+		while ( *ptr  &&  *ptr != '@' ) {
 			if ( *ptr == '*'  ||  *ptr == '?' ) {
 				wildcard = 1;
 				break;

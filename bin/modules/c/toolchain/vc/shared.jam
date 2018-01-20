@@ -112,7 +112,7 @@ actions updated response C.vc.C++ {
 
 actions together response C.vc.Archive {
     PATH=$(MSVCNT_BIN_PATH:J=;);%PATH%
-    $(C.AR:C) /nologo $(LIBFLAGS) @@($(>:\\C)) /out:$(<:C)
+    $(C.AR:C) /nologo $(LIBFLAGS) @@($(>:\\CJ=$(NEWLINE))) /out:$(<:C)
 }
 
 
@@ -276,7 +276,7 @@ rule C.vc._MultiCppCompile_PchDeps {
     if $(_pch1[4]) {
         local _pchFilename = $(_pch1[3]:LBS).pch ;
         _pchFilename = $(_pchFilename:G=$(C.ACTIVE_TOOLCHAIN_TARGET_GRIST)) ;
-        Depends $(objects) : $(_pchFilename) ;
+        #Depends $(objects) : $(_pchFilename) ;
         # add that pch as output
         objects += $(_pchFilename) ;
     }
@@ -360,12 +360,16 @@ rule C.vc._SharedLibraryFromObjects_Setup {
 }
 
 rule C.vc._SharedLibraryFromObjects_ExportLib {
-    local suflib = $(SUFLIB:Z=$(C.COMPILER_SUITE_SYMBOL)) ;
+    local _actiontlib = @($(TARGET)$(suflib):G=$(C.ACTIVE_TOOLCHAIN_TARGET_GRIST)!inner) ;
+    BINDING on $(_actiontlib) = [ C._retrieveOutputName : $(suflib) ] ;
+    MightNotUpdate $(_actiontlib) ;
+    MakeLocate $(_actiontlib) : $(outputPath) ;
+    _linkTargets += $(_actiontlib) ;
+
     BINDING on $(_tlib) = [ C._retrieveOutputName : $(suflib) ] ;
-    Depends $(C.ACTIVE_TOOLCHAIN_TARGET) : $(_tlib) : $(_t) ;
+    Depends $(C.ACTIVE_TOOLCHAIN_TARGET) : $(_tlib) : $(_actiontlib) $(_t) ;
     MightNotUpdate $(_tlib) ;
     MakeLocate $(_tlib) : $(outputPath) ;
-    _linkTargets += $(_tlib) ;
 }
 
 rule C.vc._SharedLibraryFromObjects_UnRegServer {

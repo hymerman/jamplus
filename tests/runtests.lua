@@ -29,7 +29,7 @@ end
 
 function RunJam(commandLine)
 	if not commandLine then commandLine = {} end
-	table.insert(commandLine, 1, JAM_EXECUTABLE)
+	table.insert(commandLine, 1, ospath.escape(JAM_EXECUTABLE))
 	table.insert(commandLine, 2, '-j1')
 
 	if Compiler then
@@ -97,7 +97,7 @@ function TestPattern(patterns, lines)
 				pattern = pattern:gsub('$%(C_LINK%)', C_LINK)
 				pattern = pattern:gsub('$%(PLATFORM%)', PlatformDir)
 				pattern = pattern:gsub('$%(PLATFORM_CONFIG%)', PlatformDir .. '!release')
-				pattern = pattern:gsub('$%(TOOLCHAIN_GRIST%)', 'c/' .. PlatformDir .. '/release')
+				pattern = pattern:gsub('$%(TOOLCHAIN_GRIST%)', PlatformDir .. '/release')
 				pattern = pattern:gsub('$%(CWD%)', patterncwd)
 			end
 		end
@@ -218,10 +218,14 @@ function TestPattern(patterns, lines)
 					end
 
 					if not next  and  not ooo  and  not oooPatternsToFind[1]  and  pattern  and  not patternMatches then
-						error('Found: ' .. line .. '\n\tExpected: ' .. (pattern or oooGroupPatternsToFind[1]) .. '\n\nFull output:\n' .. table.concat(lines, '\n'))
+						if not line:match('^JAMDEBUG: ') then
+							error('Found: ' .. line .. '\n\tExpected: ' .. (pattern or oooGroupPatternsToFind[1]) .. '\n\nFull output:\n' .. table.concat(lines, '\n'))
+						end
 					elseif oooPatternsToFind[1]  and  not patternMatches then
 						if not ooo  and  pattern then
-							error('Found: ' .. line .. '\n\tExpected: ' .. (pattern or oooGroupPatternsToFind[1]) .. '\n\nFull output:\n' .. table.concat(lines, '\n'))
+							if not line:match('^JAMDEBUG: ') then
+								error('Found: ' .. line .. '\n\tExpected: ' .. (pattern or oooGroupPatternsToFind[1]) .. '\n\nFull output:\n' .. table.concat(lines, '\n'))
+							end
 						else
 							if pattern then
 								lineIndex = lineIndex - 1
@@ -285,6 +289,8 @@ function TestDirectories(expectedDirs)
 		end
 		newExpectedDirs[#newExpectedDirs + 1] = dirName
 	end
+	expectedDirsMap['.build/'] = '?'
+	newExpectedDirs[#newExpectedDirs + 1] = '?.build/'
 
 	local foundDirsMap = {}
 	for entry in filefind.glob('**/') do
@@ -356,7 +362,10 @@ end
 function TestFiles(expectedFiles)
 	TestNumberUpdate()
 
+	expectedFiles[#expectedFiles + 1] = '?.depcache'
 	expectedFiles[#expectedFiles + 1] = '?.build/.depcache'
+	expectedFiles[#expectedFiles + 1] = '?.jamchecksums'
+	expectedFiles[#expectedFiles + 1] = '?.build/.jamchecksums'
 	for _, fileName in ipairs(expectedFiles) do
 		if fileName:match('%.exe$') then
 			 expectedFiles[#expectedFiles + 1] = '?' .. fileName .. '.intermediate.manifest'
@@ -506,10 +515,10 @@ else
 end
 table.sort(dirs)
 
-if Platform == 'macosx' then
-	JAM_EXECUTABLE = ospath.join(scriptPath, '..', 'bin', PlatformDir, 'jam')
-else
-	JAM_EXECUTABLE = "jam"
+JAM_EXECUTABLE = ospath.join(scriptPath, '..', 'bin', PlatformDir, 'jam')
+
+if Platform == 'win32' then
+    JAM_EXECUTABLE = ospath.make_backslash(JAM_EXECUTABLE)
 end
 
 function ErrorHandler(inMessage)

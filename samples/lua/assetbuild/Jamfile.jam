@@ -1,0 +1,9 @@
+Project assets ;
+NotFile assets ;
+
+if ! $(TARGETINFO_LOCATE) {
+    LuaSupport ;
+    LuaFile $(SUBDIR)/Jamfile.lua ;
+}
+
+

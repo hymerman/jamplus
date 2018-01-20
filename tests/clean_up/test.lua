@@ -6,6 +6,7 @@ function Test()
         'Jamfile.jam',
     }
     TestFiles(cleanFiles)
+    TestDirectories({})
 
 	local run1pattern =
 	{
@@ -81,10 +82,10 @@ function Test()
 		'*** updating 1 target(s)...',
 		'@ WriteExtraFiles all',
 		'!NEXT!*** updated 1 target(s)...',
-		'Removing subdira/extrafile.txt...',
-		'Removing subdira/subdirb/subdirc/subdird/anotherjunk.txt...',
-		'Removing subdira/subdirb/subdirc/subdird/junk.txt...',
-		'Removing subdir1/junk.txt...',
+		'!OOOGROUP!Removing subdira/extrafile.txt...',
+		'!OOOGROUP!Removing subdira/subdirb/subdirc/subdird/anotherjunk.txt...',
+		'!OOOGROUP!Removing subdira/subdirb/subdirc/subdird/junk.txt...',
+		'!OOOGROUP!Removing subdir1/junk.txt...',
 	}, RunJam{'CLEAN.VERBOSE=1', 'TEST_CLEAN_KEEP_WILDCARDS=1'})
 
     TestFiles({
@@ -113,9 +114,9 @@ function Test()
 		'*** updating 1 target(s)...',
 		'@ WriteExtraFiles all',
 		'!NEXT!*** updated 1 target(s)...',
-		'Removing subdira/subdirb/subdirc/subdird/anotherjunk.txt...',
-		'Removing subdira/subdirb/subdirc/subdird/junk.txt...',
-		'Removing subdir1/junk.txt...',
+		'!OOOGROUP!Removing subdira/subdirb/subdirc/subdird/anotherjunk.txt...',
+		'!OOOGROUP!Removing subdira/subdirb/subdirc/subdird/junk.txt...',
+		'!OOOGROUP!Removing subdir1/junk.txt...',
 	}, RunJam{'CLEAN.VERBOSE=1', 'TEST_CLEAN_KEEP_WILDCARDS=2'})
 
     TestFiles({
@@ -178,10 +179,10 @@ function Test()
 		'*** updating 1 target(s)...',
 		'@ WriteExtraFiles all',
 		'!NEXT!*** updated 1 target(s)...',
-		'Removing subdira/extrafile.txt...',
-		'Removing subdira/junk.txt...',
-		'Removing subdira/subdirb/subdirc/subdird/anotherjunk.txt...',
-		'Removing subdira/subdirb/subdirc/subdird/junk.txt...',
+		'!OOOGROUP!Removing subdira/extrafile.txt...',
+		'!OOOGROUP!Removing subdira/junk.txt...',
+		'!OOOGROUP!Removing subdira/subdirb/subdirc/subdird/anotherjunk.txt...',
+		'!OOOGROUP!Removing subdira/subdirb/subdirc/subdird/junk.txt...',
 	}, RunJam{'CLEAN.VERBOSE=1', 'TEST_CLEAN_KEEP_TARGETS=1'})
 
     TestFiles({
@@ -210,11 +211,11 @@ function Test()
 		'*** updating 1 target(s)...',
 		'@ WriteExtraFiles all',
 		'!NEXT!*** updated 1 target(s)...',
-		'Removing subdira/extrafile.txt...',
-		'Removing subdira/junk.txt...',
-		'Removing subdira/subdirb/subdirc/subdird/anotherjunk.txt...',
-		'Removing subdira/subdirb/subdirc/subdird/junk.txt...',
-		'Removing subdir1/junk.txt...',
+		'!OOOGROUP!Removing subdira/extrafile.txt...',
+		'!OOOGROUP!Removing subdira/junk.txt...',
+		'!OOOGROUP!Removing subdira/subdirb/subdirc/subdird/anotherjunk.txt...',
+		'!OOOGROUP!Removing subdira/subdirb/subdirc/subdird/junk.txt...',
+		'!OOOGROUP!Removing subdir1/junk.txt...',
 	}, RunJam{'CLEAN.VERBOSE=1', 'TEST_CLEAN_ROOTS=1'})
 
     TestFiles({
@@ -242,9 +243,9 @@ function Test()
 		'*** updating 1 target(s)...',
 		'@ WriteExtraFiles all',
 		'!NEXT!*** updated 1 target(s)...',
-		'Removing subdira/extrafile.txt...',
-		'Removing subdira/subdirb/subdirc/subdird/anotherjunk.txt...',
-		'Removing subdir1/junk.txt...',
+		'!OOOGROUP!Removing subdira/extrafile.txt...',
+		'!OOOGROUP!Removing subdira/subdirb/subdirc/subdird/anotherjunk.txt...',
+		'!OOOGROUP!Removing subdir1/junk.txt...',
 	}, RunJam{'CLEAN.VERBOSE=1', 'TEST_CLEAN_ROOTS=2'})
 
     TestFiles({
@@ -275,8 +276,8 @@ function Test()
 		'*** updating 1 target(s)...',
 		'@ WriteExtraFiles all',
 		'!NEXT!*** updated 1 target(s)...',
-		'Removing subdira/extrafile.txt...',
-		'Removing subdir1/junk.txt...',
+		'!OOOGROUP!Removing subdira/extrafile.txt...',
+		'!OOOGROUP!Removing subdir1/junk.txt...',
 	}, RunJam{'CLEAN.VERBOSE=1', 'TEST_CLEAN_ROOTS=3'})
 
     TestFiles({

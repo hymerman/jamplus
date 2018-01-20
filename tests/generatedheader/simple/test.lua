@@ -196,6 +196,17 @@ extern void Print(const char* str);
 ]]
 		TestPattern(pattern2, RunJam())
 	
+		if useChecksums then
+			pattern2 = [[
+*** found 21 target(s)...
+*** updating 2 target(s)...
+*** updated 2 target(s)...
+]]
+		else
+			pattern2 = [[
+*** found 21 target(s)...
+]]
+		end
 		osprocess.sleep(1.0)
 		ospath.touch('test.h')
 		TestPattern(pattern2, RunJam())
@@ -253,18 +264,35 @@ extern void Print(const char* str);
 
 		osprocess.sleep(1.0)
 		ospath.touch('test.h')
+
+		pattern2 = [[
+*** found 11 target(s)...
+*** updating 2 target(s)...
+*** updated 2 target(s)...
+]]
 		TestPattern(pattern2, RunJam())
 
 		osprocess.sleep(1.0)
 		WriteModifiedFile()
 
-		local pattern3 = [[
+		if Platform == 'linux' then
+			local pattern3 = [[
 *** found 11 target(s)...
 *** updating 2 target(s)...
 @ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.o 
-*** updated 1 target(s)...
+@ $(C_LINK) <$(TOOLCHAIN_GRIST):test>test 
+*** updated 2 target(s)...
 ]]
-		TestPattern(pattern3, RunJam())
+			TestPattern(pattern3, RunJam())
+		else
+			local pattern3 = [[
+*** found 11 target(s)...
+*** updating 2 target(s)...
+@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):test>main.o 
+*** updated 2 target(s)...
+]]
+			TestPattern(pattern3, RunJam())
+		end
 
 	end
 

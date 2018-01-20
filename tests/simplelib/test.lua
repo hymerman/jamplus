@@ -61,6 +61,12 @@ if Platform == 'win32' then
 *** found 12 target(s)...
 ]]
 
+	patternB_useChecksums = [[
+*** found 12 target(s)...
+*** updating 2 target(s)...
+*** updated 2 target(s)...
+]]
+
 	patternC = [[
 *** found 12 target(s)...
 *** updating 2 target(s)...
@@ -105,12 +111,18 @@ else
 @ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):app>main.o 
 @ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):lib-a>add.o 
 @ $(C_ARCHIVE) <$(TOOLCHAIN_GRIST):lib-a>lib-a.a 
-@ $(C_LINK) <$(TOOLCHAIN_GRIST):app>app
+!NEXT!@ $(C_LINK) <$(TOOLCHAIN_GRIST):app>app
 *** updated 6 target(s)...
 ]]
 
 	patternB = [[
 *** found 12 target(s)...
+]]
+
+	patternB_useChecksums = [[
+*** found 12 target(s)...
+*** updating 2 target(s)...
+*** updated 2 target(s)...
 ]]
 
 	patternC = [[
@@ -121,12 +133,16 @@ else
 *** updated 2 target(s)...
 ]]
 
+if Platform == 'linux' then
+	patternC_useChecksums = patternC
+else
 	patternC_useChecksums = [[
 *** found 12 target(s)...
 *** updating 2 target(s)...
 @ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):app>main.o 
-*** updated 1 target(s)...
+*** updated 2 target(s)...
 ]]
+end
 
 	patternD = [[
 *** found 12 target(s)...
@@ -177,7 +193,7 @@ int Add(int a, int b);
 		ospath.touch('lib-a/add.h')
 
 		if useChecksums then
-			TestPattern(patternB, RunJam{})
+			TestPattern(patternB_useChecksums, RunJam{})
 
 			osprocess.sleep(1.0)
 			WriteModifiedFileA()

@@ -53,6 +53,7 @@ function Test()
 		-- Test for a clean directory.
 		WriteOriginalFiles()
 		RunJam{ '-Cjam', 'clean' }
+		ospath.remove('jam/.jamchecksums')
 		TestDirectories(originalDirs)
 		TestFiles(originalFiles)
 	end
@@ -75,6 +76,7 @@ function Test()
 		{
 			'jam/Jamfile.jam',
 			'jam/.build/.depcache',
+			'?jam/.build/.jamchecksums',
 			'jam/$(TOOLCHAIN_PATH)/helloworld/createprecomp.obj',
 			'jam/$(TOOLCHAIN_PATH)/helloworld/file.obj',
 			'jam/$(TOOLCHAIN_PATH)/helloworld/helloworld.exe',
@@ -112,6 +114,7 @@ function Test()
 			'src/precomp.h',
 			'jam/Jamfile.jam',
 			'jam/.build/.depcache',
+			'?jam/.build/.jamchecksums',
 			'jam/$(TOOLCHAIN_PATH)/helloworld/createprecomp.o',
 			'jam/$(TOOLCHAIN_PATH)/helloworld/file.o',
 			'jam/$(TOOLCHAIN_PATH)/helloworld/helloworld',
@@ -153,6 +156,11 @@ function Test()
 			*** found 17 target(s)...
 ]]
 	end
+	local noopPattern2 = [[
+		*** found 22 target(s)...
+		*** updating 5 target(s)...
+		*** updated 5 target(s)...
+]]
 
 	do
 		TestPattern(noopPattern, RunJam{ '-Cjam' })
@@ -166,7 +174,7 @@ function Test()
 		ospath.touch('src/precomp.h')
 
 		if useChecksums then
-			TestPattern(noopPattern, RunJam{ '-Cjam' })
+			TestPattern(noopPattern2, RunJam{ '-Cjam' })
 
 			osprocess.sleep(1.0)
 			WriteModifiedFileA()
@@ -190,7 +198,7 @@ function Test()
 				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/file.o 
 				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/main.o 
 				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/createprecomp.o 
-				*** updated 4 target(s)...
+				*** updated 5 target(s)...
 ]]
 			else
 				pattern = [[
@@ -224,7 +232,22 @@ function Test()
 		ospath.touch('src/createprecomp.c')
 
 		if useChecksums then
-			TestPattern(noopPattern, RunJam{ '-Cjam' })
+			local noopPattern2
+			if Platform == 'win32' then
+				noopPattern2 = [[
+*** found 17 target(s)...
+*** updating 5 target(s)...
+*** updated 5 target(s)...
+]]
+			else
+				noopPattern2 = [[
+*** found 17 target(s)...
+*** updating 2 target(s)...
+*** updated 2 target(s)...
+]]
+			end
+			osprocess.sleep(1.0)
+			TestPattern(noopPattern2, RunJam{ '-Cjam' })
 
 			osprocess.sleep(1.0)
 			WriteModifiedFileB()
@@ -245,7 +268,7 @@ function Test()
 				*** found 17 target(s)...
 				*** updating 2 target(s)...
 				@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):helloworld>../src/createprecomp.o 
-				*** updated 1 target(s)...
+				*** updated 2 target(s)...
 ]]
 			else
 				pattern = [[
@@ -265,6 +288,7 @@ function Test()
 	---------------------------------------------------------------------------
 	WriteOriginalFiles()
 	RunJam{ '-Cjam', 'clean' }
+	ospath.remove('jam/.jamchecksums')
 	TestFiles(originalFiles)
 	TestDirectories(originalDirs)
 end

@@ -1,4 +1,7 @@
-C ;
+if ! [ RuleExists C.Toolchain ]
+{
+	C ;
+}
 
 JAM_MODULES_PATH += $(JAMFILE_ROOT) ;
 
@@ -104,7 +107,7 @@ rule ExternalProject TARGET : PROJECT_PATH : OPTIONS {
 
 
 rule DumpProjectInfo TARGET : SOURCES : OPTIONS {
-	SOURCES = [ ExpandFileList $(SOURCES) ] ;
+	SOURCES = [ ExpandFileList $(SOURCES:T) ] ;
 
 	# Write initial Project information.
 	local subdir = $(SUBDIR[1]:R=$(CWD)) ;
@@ -154,7 +157,7 @@ rule DumpProjectInfo TARGET : SOURCES : OPTIONS {
 		forceIncludes = $(FORCE_INCLUDES:T) ;
 	}
 
-	local definesString = "'$(defines)'," ;
+	local definesString = "[[$(defines)]]," ;
 	definesString ?= "" ;
 	Contents += "$(project).Defines['$(PLATFORM)']['$(CONFIG)'] = { $(definesString:J= ) }$(NEWLINE)" ;
 

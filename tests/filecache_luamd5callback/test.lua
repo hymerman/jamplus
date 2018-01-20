@@ -44,7 +44,7 @@ md5png: Calculating file1.png...
 
 	local pass1Files =
 	{
-		'.depcache',
+		'?.depcache',
 		'Jamfile.jam',
 		'extra.png',
 		'file1.image',
@@ -89,7 +89,7 @@ md5png: Calculating file1.png...
 
 	local pass2Files =
 	{
-		'.depcache',
+		'?.depcache',
 		'Jamfile.jam',
 		'extra.png',
 		'file1.png',
@@ -115,9 +115,11 @@ md5png: Calculating file1.png...
 	local pattern2 = [[
 *** found 11 target(s)...
 *** updating 5 target(s)...
+md5png: Calculating file1.png...
 Using cached file1.image
 Using cached file2.image
 Using cached file3.image
+md5zip: Calculating file4.zip...
 Using cached file4.image
 Using cached file5.image
 *** updated 5 target(s)...
@@ -127,16 +129,33 @@ Using cached file5.image
 	TestFiles(pass1Files)
 	TestDirectories(newDirectories)
 
+	RunJam{ 'clean', 'JAM_CHECKSUMS_KEEPCACHE=1' }
+
+	local pattern3 = [[
+*** found 11 target(s)...
+*** updating 5 target(s)...
+Using cached file1.image
+Using cached file2.image
+Using cached file3.image
+Using cached file4.image
+Using cached file5.image
+*** updated 5 target(s)...
+]]
+	TestPattern(pattern3, RunJam())
+
+	TestFiles(pass1Files)
+	TestDirectories(newDirectories)
+
 	osprocess.sleep(1.0)
 	ospath.touch('file3.png')
 
-	local pattern3 = [[
+	local pattern4 = [[
 *** found 11 target(s)...
 *** updating 1 target(s)...
 file3.image is already the proper cached target.
 *** updated 1 target(s)...
 ]]
-	TestPattern(pattern3, RunJam())
+	TestPattern(pattern4, RunJam())
 
 	ospath.remove('cache/')
 	ospath.remove('.depcache')
@@ -180,14 +199,14 @@ function TestChecksum()
 
 	-- First build
 	local pattern = [[
-md5png: Calculating file1.png...
-md5zip: Calculating file4.zip...
 *** found 11 target(s)...
 *** updating 5 target(s)...
+md5png: Calculating file1.png...
 @ ConvertImageHelper file1.image
 !NEXT!Caching file1.image
 @ ConvertImageHelper file2.image
 !NEXT!@ ConvertImageHelper file3.image
+!NEXT!md5zip: Calculating file4.zip...
 !NEXT!@ ConvertImageHelper file4.image
 !NEXT!Caching file4.image
 @ ConvertImageHelper file5.image
@@ -197,7 +216,7 @@ md5zip: Calculating file4.zip...
 	TestPattern(pattern, RunJam())
 
 	local pass1Files = {
-		'.depcache',
+		'?.depcache',
 		'Jamfile.jam',
 		'extra.png',
 		'file1.image',
@@ -240,7 +259,7 @@ md5zip: Calculating file4.zip...
 	RunJam{ 'clean' }
 
 	local pass2Files = {
-		'.depcache',
+		'?.depcache',
 		'Jamfile.jam',
 		'extra.png',
 		'file1.png',
@@ -266,9 +285,11 @@ md5zip: Calculating file4.zip...
 	local pattern2 = [[
 *** found 11 target(s)...
 *** updating 5 target(s)...
+md5png: Calculating file1.png...
 Using cached file1.image
 Using cached file2.image
 Using cached file3.image
+md5zip: Calculating file4.zip...
 Using cached file4.image
 Using cached file5.image
 *** updated 5 target(s)...
@@ -278,26 +299,46 @@ Using cached file5.image
 	TestFiles(pass1Files)
 	TestDirectories(newDirectories)
 
-	osprocess.sleep(1.0)
-	ospath.touch('file3.png')
+	RunJam{ 'clean', 'JAM_CHECKSUMS_KEEPCACHE=1' }
 
 	local pattern3 = [[
 *** found 11 target(s)...
+*** updating 5 target(s)...
+Using cached file1.image
+Using cached file2.image
+Using cached file3.image
+Using cached file4.image
+Using cached file5.image
+*** updated 5 target(s)...
 ]]
 	TestPattern(pattern3, RunJam())
+
+	TestFiles(pass1Files)
+	TestDirectories(newDirectories)
+
+	osprocess.sleep(1.0)
+	ospath.touch('file3.png')
+
+	local pattern4 = [[
+*** found 11 target(s)...
+*** updating 1 target(s)...
+file3.image is already the proper cached target.
+*** updated 1 target(s)...
+]]
+	TestPattern(pattern4, RunJam())
 
 	osprocess.sleep(1.0)
 	ospath.copy_file('extra.png', 'file3.png')
 	ospath.touch('file3.png')
 
-	local pattern3 = [[
+	local pattern5 = [[
 *** found 11 target(s)...
 *** updating 1 target(s)...
 @ ConvertImageHelper file3.image
 !NEXT!Caching file3.image
 *** updated 1 target(s)...
 ]]
-	TestPattern(pattern3, RunJam())
+	TestPattern(pattern5, RunJam())
 
 	local pass3Directories = {
 		'cache/',
@@ -313,7 +354,7 @@ Using cached file5.image
 	}
 
 	local pass3Files = {
-		'.depcache',
+		'?.depcache',
 		'Jamfile.jam',
 		'extra.png',
 		'file1.image',
@@ -344,10 +385,10 @@ Using cached file5.image
 	TestFiles(pass3Files)
 	TestDirectories(pass3Directories)
 
-	local pattern4 = [[
+	local pattern6 = [[
 *** found 11 target(s)...
 ]]
-	TestPattern(pattern4, RunJam())
+	TestPattern(pattern6, RunJam())
 
 	ospath.remove('cache/')
 	ospath.remove('.depcache')

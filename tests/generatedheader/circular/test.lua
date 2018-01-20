@@ -15,6 +15,7 @@ function Test()
 	{
 	}
 
+	os.remove('.jamcache')
 	RunJam{ 'clean' }
 	TestDirectories(originalDirs)
 	TestFiles(originalFiles)
@@ -23,15 +24,19 @@ function Test()
 		-- First build
 		local pattern = [[
 *** found 12 target(s)...
-*** updating 4 target(s)...
+*** updating 5 target(s)...
 Writing generated.h
 @ SleepThenTouch <$(TOOLCHAIN_GRIST):foo>generated.h
 !NEXT!@ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):foo>sourceA.obj
 !NEXT!@ $(C_ARCHIVE) <$(TOOLCHAIN_GRIST):foo>foo.lib
-!NEXT!*** updated 4 target(s)...
+!NEXT!*** updated 5 target(s)...
 ]]
 
 		TestPattern(pattern, RunJam{'foo'})
+
+		local pass1Directories = {
+			'$(TOOLCHAIN_PATH)/foo/',
+		}
 
 		local pass1Files =
 		{
@@ -40,18 +45,17 @@ Writing generated.h
 			'README',
 			'circularA.h',
 			'circularB.h',
-			'foo.lib',
 			'generated.h',
 			'sourceA.c',
-			'sourceA.obj',
 			'sourceB.c',
 			'sourceB.h',
-			'sourceB.obj',
-			'vc.pdb',
+			'$(TOOLCHAIN_PATH)/foo/foo.lib',
+			'$(TOOLCHAIN_PATH)/foo/sourceA.obj',
+			'$(TOOLCHAIN_PATH)/foo/sourceB.obj',
 		}
 
 		TestFiles(pass1Files)
-		TestDirectories(originalDirs)
+		TestDirectories(pass1Directories)
 
 		local pattern2 = [[
 *** found 11 target(s)...
@@ -62,6 +66,11 @@ Writing generated.h
 		ospath.touch('generated.h')
 
 		if useChecksums then
+			pattern2 = [[
+*** found 11 target(s)...
+*** updating 3 target(s)...
+*** updated 3 target(s)...
+]]
 			TestPattern(pattern2, RunJam{ 'foo' })
 
 			osprocess.sleep(1.0)
@@ -81,16 +90,20 @@ Writing generated.h
 		-- First build
 		local pattern = [[
 *** found 11 target(s)...
-*** updating 4 target(s)...
+*** updating 5 target(s)...
 Writing generated.h
 @ SleepThenTouch <$(TOOLCHAIN_GRIST):foo>generated.h 
 @ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):foo>sourceA.o 
 @ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):foo>sourceB.o 
 @ $(C_ARCHIVE) <$(TOOLCHAIN_GRIST):foo>foo.a 
-!NEXT!*** updated 4 target(s)...
+!NEXT!*** updated 5 target(s)...
 ]]
 
 		TestPattern(pattern, RunJam{ 'foo' })
+
+		local pass1Directories = {
+			'$(TOOLCHAIN_PATH)/foo/',
+		}
 
 		local pass1Files =
 		{
@@ -99,17 +112,17 @@ Writing generated.h
 			'README',
 			'circularA.h',
 			'circularB.h',
-			'foo.a',
 			'generated.h',
 			'sourceA.c',
-			'sourceA.o',
 			'sourceB.c',
 			'sourceB.h',
-			'sourceB.o',
+			'$(TOOLCHAIN_PATH)/foo/foo.a',
+			'$(TOOLCHAIN_PATH)/foo/sourceA.o',
+			'$(TOOLCHAIN_PATH)/foo/sourceB.o',
 		}
 
 		TestFiles(pass1Files)
-		TestDirectories(originalDirs)
+		TestDirectories(pass1Directories)
 
 		local pattern2 = [[
 *** found 11 target(s)...
@@ -120,6 +133,11 @@ Writing generated.h
 		ospath.touch('generated.h')
 
 		if useChecksums then
+		local pattern2 = [[
+*** found 11 target(s)...
+*** updating 3 target(s)...
+*** updated 3 target(s)...
+]]
 			TestPattern(pattern2, RunJam{ 'foo' })
 
 			osprocess.sleep(1.0)
@@ -130,10 +148,13 @@ Writing generated.h
 *** updating 3 target(s)...
 @ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):foo>sourceA.o 
 @ C.$(COMPILER).CC <$(TOOLCHAIN_GRIST):foo>sourceB.o 
-!NEXT!*** updated 2 target(s)...
+!NEXT!*** updated 3 target(s)...
 ]]
 			TestPattern(pattern3, RunJam{ 'foo' })
 
+		local pattern2 = [[
+*** found 11 target(s)...
+]]
 			TestPattern(pattern2, RunJam{ 'foo' })
 
 			osprocess.sleep(1.0)
